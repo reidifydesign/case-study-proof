@@ -193,7 +193,7 @@ function excerpt(t) {
   return s.length > 150 ? s.slice(0, 147) + '...' : s;
 }
 
-export function checkDocument(text, { evidence = null, evidenceFile = null, today = new Date(), config = {} } = {}) {
+export function checkDocument(text, { evidence = null, evidenceFile = null, today = new Date(), config = {}, sentencesOnly = false } = {}) {
   const doc = parseDocument(text);
   const findings = [];
   const claimRows = [];
@@ -207,13 +207,15 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
   const docDate = isoDate(doc.front.updated) || isoDate(doc.front.date) || null;
   const push = (rule, extra) => findings.push({ rule, severity: RULES[rule].severity, ...extra });
 
-  if (!doc.front.date && !doc.front.updated) {
-    push('undated-document', { file: 'text', line: 1, excerpt: '', message: RULES['undated-document'].title, fix: RULES['undated-document'].fix });
-  } else if (!docDate) {
-    push('undated-document', { file: 'text', line: 1, excerpt: '', message: `front matter date "${doc.front.date || doc.front.updated}" is not YYYY-MM-DD`, fix: RULES['undated-document'].fix });
+  if (!sentencesOnly) {
+    if (!doc.front.date && !doc.front.updated) {
+      push('undated-document', { file: 'text', line: 1, excerpt: '', message: RULES['undated-document'].title, fix: RULES['undated-document'].fix });
+    } else if (!docDate) {
+      push('undated-document', { file: 'text', line: 1, excerpt: '', message: `front matter date "${doc.front.date || doc.front.updated}" is not YYYY-MM-DD`, fix: RULES['undated-document'].fix });
+    }
   }
   if (!evidence) {
-    push('no-evidence-file', { file: 'evidence', line: null, excerpt: '', message: RULES['no-evidence-file'].title, fix: RULES['no-evidence-file'].fix });
+    if (!sentencesOnly) push('no-evidence-file', { file: 'evidence', line: null, excerpt: '', message: RULES['no-evidence-file'].title, fix: RULES['no-evidence-file'].fix });
   } else {
     for (const p of validateEvidence(list, { today, docDate })) {
       findings.push({ rule: p.rule, severity: p.severity, file: 'evidence', line: null, excerpt: p.where, message: `${p.where}: ${p.message}`, fix: p.fix || RULES[p.rule].fix });

@@ -95,3 +95,68 @@ test('placeholders', () => {
   assert.equal(placeholderIn('TODO add quote'), 'TODO');
   assert.equal(placeholderIn('Sessions rose 40%'), null);
 });
+
+// ---- false positives found in a private trial run (synthetic sentences) ----
+
+test('a number directly after a capitalised proper name is not a figure', () => {
+  assert.deepEqual(kinds('Studio 54 sessions ran long.'), []);
+  assert.deepEqual(kinds('Route 66 visitors queued outside.'), []);
+  assert.deepEqual(kinds('Harbour Bakery served Gate 12 orders first.'), []);
+  // controls: ordinary words before a figure still count
+  assert.deepEqual(kinds('Over 54 sessions were logged.'), ['count:54 sessions']);
+  assert.deepEqual(kinds('Our 12 new customers joined.'), ['count:12 new customers']);
+  assert.deepEqual(kinds('Orders 40 leads came in.'), ['count:40 leads']);
+  assert.deepEqual(kinds('LCP 1.2s on mobile.'), ['measure:1.2s']);
+  assert.deepEqual(kinds('On March 12 orders rose sharply.'), []);
+});
+
+test('format and spec durations are not measurements', () => {
+  assert.deepEqual(kinds('Clips run up to 30 seconds each, 9:16 vertical at 1080x1920.'), []);
+  assert.deepEqual(kinds('Each reel is at most 15 seconds.'), []);
+  assert.deepEqual(kinds('Uploads can be 10 seconds long.'), []);
+  assert.deepEqual(kinds('Files are capped at 50 MB.'), []);
+  // controls: a measured time is still a figure
+  assert.deepEqual(kinds('Load time fell to 1.2s.'), ['measure:1.2s']);
+  assert.deepEqual(kinds('Pages now load in at most 2 seconds.'), ['measure:2 seconds']);
+  assert.deepEqual(kinds('The new flow saves 30 seconds per order.'), ['measure:30 seconds']);
+});
+
+test('a year is never a figure, whatever follows it', () => {
+  assert.deepEqual(kinds('Score of 2026 was the title.'), []);
+  assert.deepEqual(kinds('It ranked 2025 on the list.'), []);
+  assert.deepEqual(kinds('That took 2026 seconds.'), []);
+  assert.deepEqual(kinds('The 2025/2026 season was busy.'), []);
+  // a count written with a thousands separator is a figure
+  assert.deepEqual(kinds('Sales were 2,026 orders.'), ['count:2,026 orders']);
+});
+
+test('100% ownership and status wording is not a measured percentage', () => {
+  assert.deepEqual(kinds('The site is 100% owned by the client.'), []);
+  assert.deepEqual(kinds('The code is 100% client-owned.'), []);
+  assert.deepEqual(kinds('The files stay 100% yours.'), []);
+  // controls
+  assert.deepEqual(kinds('Sessions rose 100%.'), ['percent:100%']);
+  assert.deepEqual(kinds('100% of sessions came from search.'), ['percent:100%']);
+  assert.deepEqual(kinds('It is 99% owned by the client.'), ['percent:99%']);
+});
+
+test('vague-claim wording is ignored when it is negated', () => {
+  assert.equal(vagueWords('No guaranteed results.'), null);
+  assert.equal(vagueWords('We never promise rankings or guaranteed results.'), null);
+  assert.equal(vagueWords('We work without guaranteed results.'), null);
+  assert.equal(vagueWords('We never promise massive growth.'), null);
+  assert.equal(vagueWords('We promise guaranteed results.'), 'guaranteed results');
+  assert.equal(vagueWords('We never promise, but we saw massive growth.'), 'massive');
+});
+
+test('"-generated" adjectives and verbs with no outcome noun are not causal wording', () => {
+  assert.equal(causalMatches('The gallery uses AI-generated photography, and results are steady.', lex).length, 0);
+  assert.equal(causalMatches('Auto-generated alt text covers the gallery and sales pages.', lex).length, 0);
+  assert.equal(causalMatches('The agency delivered the files on time, and results were steady.', lex).length, 0);
+  assert.equal(causalMatches('Generated 38 enquiries.', lex).length, 0);
+  // controls: a subject plus an outcome noun is still flagged
+  assert.ok(causalMatches('The new pages generated 38 enquiries.', lex).length);
+  assert.ok(causalMatches('The redesign generated more enquiries.', lex).length);
+  assert.ok(causalMatches('The campaign delivered results.', lex).length);
+  assert.ok(causalMatches('The rebuild boosted sales.', lex).length);
+});

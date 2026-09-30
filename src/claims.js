@@ -14,7 +14,8 @@ export const COUNT_NOUNS = [
   'users', 'visitors', 'sessions', 'leads', 'orders', 'customers', 'clients', 'enquiries', 'inquiries',
   'clicks', 'downloads', 'sign-ups', 'signups', 'subscribers', 'bookings', 'sales', 'conversions',
   'transactions', 'followers', 'views', 'pageviews', 'impressions', 'tickets', 'reviews', 'calls',
-  'applications', 'registrations', 'purchases', 'citations', 'mentions', 'installs'
+  'applications', 'registrations', 'purchases', 'citations', 'mentions', 'installs', 'students', 'learners',
+  'attendees', 'participants', 'registrants', 'enrolments', 'enrollments'
 ];
 
 // Words that name a measurable thing. Users can add their own in the config file.
@@ -82,6 +83,56 @@ export function decimalsOf(str) {
   return m ? m[1].length : 0;
 }
 
+const YEAR = /^(?:19|20)\d{2}$/;
+const MONTH_NAMES = ['january', 'february', 'march', 'april', 'may', 'june', 'july', 'august', 'september', 'october', 'november', 'december', 'jan', 'feb', 'mar', 'apr', 'jun', 'jul', 'aug', 'sep', 'sept', 'oct', 'nov', 'dec'];
+
+// Capitalised words that can sit in front of a figure without being part of a name
+// ("Over 300 orders", "Our 12 clients", "Sessions 40 ..."). Any other Capitalised word directly
+// in front of a bare number is read as a proper name ("Studio 54", "Route 66").
+const NAME_EXEMPT = new Set([
+  ...MONTH_NAMES,
+  ...[...METRIC_WORDS, ...OUTCOME_WORDS].flatMap((w) => w.toLowerCase().split(/[\s-]+/)),
+  ...COUNT_NOUNS.map((w) => w.toLowerCase()),
+  'about', 'above', 'across', 'after', 'all', 'almost', 'also', 'among', 'an', 'and', 'another', 'any', 'approx', 'approximately',
+  'around', 'as', 'at', 'before', 'below', 'between', 'both', 'but', 'by', 'circa', 'combined', 'during', 'each', 'either', 'else',
+  'every', 'extra', 'few', 'fewer', 'first', 'for', 'from', 'here', 'his', 'her', 'if', 'in', 'into', 'it', 'its', 'just', 'last',
+  'less', 'many', 'more', 'most', 'my', 'nearly', 'neither', 'new', 'next', 'no', 'nor', 'of', 'on', 'only', 'or', 'other', 'our',
+  'over', 'per', 'plus', 'rank', 'rating', 'roughly', 'several', 'since', 'so', 'some', 'still', 'than', 'that', 'the', 'their',
+  'then', 'there', 'these', 'they', 'this', 'those', 'to', 'top', 'total', 'under', 'until', 'up', 'we', 'when', 'where', 'while',
+  'with', 'within', 'without', 'your'
+]);
+
+function afterProperName(plain, index, digits) {
+  const m = /(?:^|[\s("'“[])([a-z]?[A-Z][a-z][\w'’&.-]*)\s+$/.exec(plain.slice(0, index));
+  if (!m) return false;
+  const w = m[1].toLowerCase().replace(/[.'’]+$/, '');
+  if (MONTH_NAMES.includes(w)) return Number(String(digits).replace(/,/g, '')) <= 31; // "March 12" is a date
+  return !NAME_EXEMPT.has(w);
+}
+
+// "up to 30 seconds each", "at most 15 seconds", "9:16 vertical at 1080x1920": limits and formats.
+const SPEC_LEAD = /\b(?:up to|at most|at least|no more than|no longer than|no shorter than|a maximum of|maximum of|maximum|max\.?|minimum of|minimum|min\.?|limited to|limit of|capped at|cap of)\s+(?:about\s+|around\s+|roughly\s+)?$/i;
+const SPEC_TRAIL = /^\s*(?:each\b|long\b|or (?:less|shorter|fewer|more|longer)\b|max(?:imum)?\b|limit\b|per (?:clip|video|reel|scene|shot|take|generation|render|file|upload|post|story|asset)s?\b)/i;
+const SPEC_CONTEXT = /\b(?:vertical|horizontal|square|portrait|landscape|aspect ratio|resolution|codec|fps|frame rate|file size|format(?:s|ted)?|spec(?:s|ification)?s?)\b|\b\d{1,2}:\d{1,2}\b|\b\d{3,5}\s?[x×]\s?\d{3,5}\b/i;
+const MEASURED_WORDS = /\b(?:lcp|cls|inp|ttfb|fcp|load(?:ed|s|ing)?|page speed|speed|respon\w+|latency|render(?:ed|s)?|lighthouse|interactive|turnaround|saved?|saving|cut|reduc\w+|faster|slower|improv\w+|dropped|fell|weight|bundle|payload)\b/i;
+
+function isSpecMeasure(plain, m) {
+  if (MEASURED_WORDS.test(plain)) return false;
+  const before = plain.slice(0, m.index);
+  const after = plain.slice(m.index + m[0].length);
+  return SPEC_LEAD.test(before) || SPEC_TRAIL.test(after) || SPEC_CONTEXT.test(plain);
+}
+
+// "100% owned by the client", "100% client-owned", "100% yours": a yes or no, not a measurement.
+const STATUS_TAIL = /^\s*(?:of\s+(?:the\s+|your\s+|their\s+|our\s+)?(?:code|site|website|files|content|assets|ip|work|copy|design|repo|source)\s+)?(?:(?:is|are|was|stays?|remains?)\s+)?(?:\w+-)?(?:owned|ownership|yours|theirs|ours|free|custom|bespoke|handmade|hand-built|hand-coded|in-house|open-source|original|remote)\b/i;
+
+// Is the clause in front of index negated ("no guaranteed results", "never promise rankings")?
+export function negatedBefore(plain, index) {
+  const clause = plain.slice(0, index).split(/[,;:.!?]|\b(?:but|only|just|instead)\b/i).pop();
+  const words = clause.trim().split(/\s+/).slice(-6).join(' ');
+  return /\b(?:no|not|never|without|nor|neither|cannot|zero|nothing)\b|n['’]t\b/i.test(words);
+}
+
 function overlaps(used, a, b) {
   return used.some(([x, y]) => a < y && b > x);
 }
@@ -131,6 +182,7 @@ export function extractClaims(plain) {
       at = { index: m.index + off, 0: m[0].slice(off) };
       low = undefined;
     }
+    if (low === undefined && hi === 100 && STATUS_TAIL.test(plain.slice(at.index + at[0].length))) continue;
     add(at, { kind: 'percent', value: hi, decimals: decimalsOf(m[2]), low, lowDecimals: low !== undefined ? decimalsOf(m[1]) : 0 });
   }
 
@@ -150,17 +202,27 @@ export function extractClaims(plain) {
 
   const counts = COUNT_NOUNS.map((n) => n.replace('-', '[- ]?')).join('|');
   all(new RegExp(String.raw`\b(\d[\d,]*(?:\.\d+)?)\s?(k|m)?\s+(?:[A-Za-z-]+\s+){0,2}?(${counts})\b`, 'i'), (m) => {
-    if (/^(?:19|20)\d{2}$/.test(m[1])) return; // a year, not a count
+    if (YEAR.test(m[1])) return; // a year, not a count
+    if (afterProperName(plain, m.index, m[1])) return; // "Studio 54 sessions"
     const scale = m[2] ? SCALE[m[2].toLowerCase()] : 1;
     add(m, { kind: 'count', value: parseNumber(m[1]) * scale, decimals: decimalsOf(m[1]), scaled: !!m[2], noun: m[3].toLowerCase() });
   });
 
-  all(/\b(\d+(?:\.\d+)?)\s?(ms|milliseconds?|seconds?|secs?|s|kb|mb|gb)\b(?!\w)/i, (m) => add(m, { kind: 'measure', value: parseNumber(m[1]), decimals: decimalsOf(m[1]), unit: m[2].toLowerCase() }));
+  all(/\b(\d+(?:\.\d+)?)\s?(ms|milliseconds?|seconds?|secs?|s|kb|mb|gb)\b(?!\w)/i, (m) => {
+    if (YEAR.test(m[1]) || afterProperName(plain, m.index, m[1]) || isSpecMeasure(plain, m)) return;
+    add(m, { kind: 'measure', value: parseNumber(m[1]), decimals: decimalsOf(m[1]), unit: m[2].toLowerCase() });
+  });
   all(/\b(\d+(?:\.\d+)?)\s?\/\s?100\b/i, (m) => add(m, { kind: 'score', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) }));
-  all(/\b(?:score|rating)s?(?: of| at| to)?\s+(\d+(?:\.\d+)?)\b/i, (m) => add(m, { kind: 'score', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) }));
+  all(/\b(?:score|rating)s?(?: of| at| to)?\s+(\d+(?:\.\d+)?)\b/i, (m) => {
+    if (!YEAR.test(m[1])) add(m, { kind: 'score', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) });
+  });
 
-  all(/\btop\s+(\d+)\b/i, (m) => add(m, { kind: 'rank', value: parseNumber(m[1]), decimals: 0 }));
-  all(/\b(?:ranked|ranks|ranking|position)\s+(?:#|no\.?\s?)?(\d+)\b/i, (m) => add(m, { kind: 'rank', value: parseNumber(m[1]), decimals: 0 }));
+  all(/\btop\s+(\d+)\b/i, (m) => {
+    if (!YEAR.test(m[1])) add(m, { kind: 'rank', value: parseNumber(m[1]), decimals: 0 });
+  });
+  all(/\b(?:ranked|ranks|ranking|position)\s+(?:#|no\.?\s?)?(\d+)\b/i, (m) => {
+    if (!YEAR.test(m[1])) add(m, { kind: 'rank', value: parseNumber(m[1]), decimals: 0 });
+  });
   all(/#(\d+)\s+(?:ranking|result|position|spot)\b/i, (m) => add(m, { kind: 'rank', value: parseNumber(m[1]), decimals: 0 }));
   all(/\b(?:first page of (?:google|search|results)|page one of (?:google|search))\b/i, (m) => add(m, { kind: 'rank-implied' }));
 
@@ -219,18 +281,34 @@ const STRONG_CAUSAL = [
   /\bthanks to\b/i,
   /\bdue to\b/i,
   /\bowing to\b/i,
-  /\bcaus(?:e|ed|es|ing)\b/i,
-  /(?<![-\w])dr(?:ove|ives|iving)\b/i,
-  /\bboost(?:ed|s|ing)\b/i,
-  /\blift(?:ed|s|ing)\b/i,
-  /\bgenerat(?:ed|es|ing)\b/i,
-  /\bdeliver(?:ed|s|ing)\b/i,
   /\bresponsible for\b/i,
-  /\bunlock(?:ed|s|ing)\b/i,
   /\bhad an? (?:\w+ )?(?:impact|effect) on\b/i,
   /\bhelped (?:to )?(?:increase|grow|improve|reduce|cut|double|lift|boost|drive)\b/i,
   /\bcontribut(?:ed|es|ing) to\b/i
 ];
+
+// Verbs that only claim a cause when something did them to an outcome: they need a subject in
+// front and an outcome noun or figure after them, and are not adjectives ("AI-generated").
+const CAUSAL_VERBS = [
+  /(?<![-\w])caus(?:e|ed|es|ing)(?![-\w])/i,
+  /(?<![-\w])dr(?:ove|ives|iving)(?![-\w])/i,
+  /(?<![-\w])boost(?:ed|s|ing)(?![-\w])/i,
+  /(?<![-\w])lift(?:ed|s|ing)(?![-\w])/i,
+  /(?<![-\w])generat(?:ed|es|ing)(?![-\w])/i,
+  /(?<![-\w])deliver(?:ed|s|ing)(?![-\w])/i,
+  /(?<![-\w])unlock(?:ed|s|ing)(?![-\w])/i
+];
+
+function causalVerbHit(plain, lex) {
+  for (const re of CAUSAL_VERBS) {
+    const m = re.exec(plain);
+    if (!m) continue;
+    if (!/[A-Za-z]/.test(plain.slice(0, m.index))) continue; // no subject
+    const after = plain.slice(m.index + m[0].length).split(/[,;:.!?]/)[0].split(/\s+/).slice(0, 9).join(' ');
+    if (/\d/.test(after) || lex.outcomeRe.test(after)) return m[0];
+  }
+  return null;
+}
 
 export function causalMatches(plain, lex) {
   const hits = [];
@@ -238,6 +316,8 @@ export function causalMatches(plain, lex) {
     const m = re.exec(plain);
     if (m) hits.push(m[0]);
   }
+  const verb = causalVerbHit(plain, lex);
+  if (verb) hits.push(verb);
   const verbs = 'increased|improved|raised|grew|reduced|cut|lowered|doubled|tripled|increases|improves|raises|reduces|cuts|lowers|grows';
   const tv = new RegExp(`\\b(?:${verbs})\\s+(?:the\\s+|their\\s+|our\\s+|its\\s+|overall\\s+|average\\s+)*(?:[\\w-]+\\s+){0,2}?${lex.metricRe.source}`, 'i');
   const m = tv.exec(plain);
@@ -251,10 +331,14 @@ export function hedged(plain) {
   return /\b(?:coincid\w+|correlat\w+|followed|we did not test|not a causal|cannot say|can't say|no causal|not proven)\b/i.test(plain);
 }
 
-const VAGUE = /(?<!statistically )\b(?:significant(?:ly)?|dramatic(?:ally)?|massive(?:ly)?|huge(?:ly)?|skyrocket\w*|explod\w*|record[- ]breaking|game[- ]chang\w+|best[- ]in[- ]class|world[- ]class|incredible|tremendous(?:ly)?|transformative|unprecedented|guaranteed results)\b/i;
+const VAGUE = /(?<!statistically )\b(?:significant(?:ly)?|dramatic(?:ally)?|massive(?:ly)?|huge(?:ly)?|skyrocket\w*|explod\w*|record[- ]breaking|game[- ]chang\w+|best[- ]in[- ]class|world[- ]class|incredible|tremendous(?:ly)?|transformative|unprecedented|guaranteed (?:results|rankings?|growth|traffic|roi|sales|leads|success))\b/i;
 export function vagueWords(plain) {
-  const m = VAGUE.exec(plain);
-  return m ? m[0] : null;
+  const re = new RegExp(VAGUE.source, 'gi');
+  let m;
+  while ((m = re.exec(plain))) {
+    if (!negatedBefore(plain, m.index)) return m[0];
+  }
+  return null;
 }
 
 export function placeholderIn(text) {

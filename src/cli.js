@@ -24,6 +24,7 @@ Options
   --evidence <file>   evidence JSON (default: front matter "evidence:", then
                       <name>.evidence.json, then evidence.json beside the case study)
   --strict            warnings also fail the run
+  --sentences-only    read the sentences only: no undated-document or no-evidence-file warning
   --json              machine-readable output
   --explain           repeat the fix under every finding (default: once per rule)
   --today YYYY-MM-DD  treat this as today (for repeatable runs)
@@ -42,6 +43,7 @@ function parseArgs(argv) {
       o[a.slice(2)] = argv[++i];
       if (o[a.slice(2)] === undefined) throw new Error(`${a} needs a value`);
     } else if (a === '--strict' || a === '--json' || a === '--markdown' || a === '--explain') o[a.slice(2)] = true;
+    else if (a === '--sentences-only') o.sentencesOnly = true;
     else if (a === '--no-color') o.color = false;
     else if (a === '-h' || a === '--help') o.help = true;
     else if (a === '-v' || a === '--version') o.version = true;
@@ -96,7 +98,7 @@ function runOne(file, opts) {
   const evFile = findEvidence(file, front, opts.evidence);
   if (opts.evidence && !fs.existsSync(evFile)) throw new Error(`evidence file not found: ${opts.evidence}`);
   const evidence = evFile ? loadEvidenceFile(evFile) : null;
-  const res = checkDocument(text, { evidence, evidenceFile: evFile, today: todayFrom(opts), config: loadConfig(file) });
+  const res = checkDocument(text, { evidence, evidenceFile: evFile, today: todayFrom(opts), config: loadConfig(file), sentencesOnly: !!opts.sentencesOnly });
   return { file, evidenceFile: evFile ? (path.relative(process.cwd(), evFile) || evFile).split(path.sep).join('/') : null, ...res };
 }
 

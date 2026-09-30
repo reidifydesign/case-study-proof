@@ -190,3 +190,48 @@ test('matchClaim lists what the evidence does hold when it fails', () => {
   assert.equal(r.ok, false);
   assert.ok(r.tried.some((t) => /change 40/.test(t)));
 });
+
+// ---- false positives found in a private trial run (synthetic sentences) ----
+
+test('a year is not matched against the evidence', () => {
+  const r = run('Organic sessions ranked 2025 among peers in June 2026 [E1].\n');
+  assert.ok(!rules(r).includes('number-mismatch'), JSON.stringify(r.findings));
+});
+
+test('an AI-generated asset in a sentence with a figure is not a causal claim', () => {
+  const r = run('The gallery uses AI-generated photography, and sessions were 1,200 in March 2026 [E1].\n');
+  assert.deepEqual(rules(r).filter((x) => x.startsWith('causal')), []);
+});
+
+test('ownership wording does not raise figure rules', () => {
+  const r = run('Harbour Bakery keeps 100% ownership of the site, which is 100% client-owned.\n', []);
+  assert.deepEqual(rules(r), []);
+});
+
+test('spec durations do not raise figure rules', () => {
+  const r = run('Clips run up to 30 seconds each, 9:16 vertical at 1080x1920.\n', []);
+  assert.deepEqual(rules(r), []);
+});
+
+test('negated disclaimers are not vague claims', () => {
+  assert.deepEqual(rules(run('No guaranteed results.\n', [])), []);
+  assert.deepEqual(rules(run('Northwind Tiles never promise rankings.\n', [])), []);
+});
+
+test('sentencesOnly drops the document-level warnings and nothing else', () => {
+  const body = 'We saw significant growth.\n';
+  const full = checkDocument(body, { evidence: null, today: TODAY });
+  assert.ok(rules(full).includes('undated-document'));
+  assert.ok(rules(full).includes('no-evidence-file'));
+  const only = checkDocument(body, { evidence: null, today: TODAY, sentencesOnly: true });
+  assert.ok(!rules(only).includes('undated-document'));
+  assert.ok(!rules(only).includes('no-evidence-file'));
+  assert.ok(rules(only).includes('vague-claim'));
+});
+
+test('a block-level proof-ignore covers every sentence in the paragraph', () => {
+  const body = '<!-- proof-ignore: unsourced-number, missing-date, unnamed-metric, no-baseline -- quoted from the client email -->\nThey said orders rose 50%. They also said leads rose 30%.\n';
+  const r = run(body);
+  assert.deepEqual(rules(r).filter((x) => x !== 'unused-evidence'), []);
+  assert.ok(r.suppressed >= 4);
+});

@@ -99,3 +99,17 @@ test('a missing evidence file is a warning, not a crash', () => {
   assert.equal(r.status, 0);
   assert.match(r.stdout, /no-evidence-file/);
 });
+
+test('--sentences-only drops undated-document and no-evidence-file but keeps sentence findings', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csp-'));
+  fs.writeFileSync(path.join(dir, 'c.md'), 'We saw significant growth, and orders rose 40% in June 2026.\n');
+  const full = JSON.parse(cli('check', path.join(dir, 'c.md'), '--json', '--today', '2026-09-30').stdout);
+  const fullRules = full.files[0].findings.map((f) => f.rule);
+  assert.ok(fullRules.includes('undated-document'));
+  assert.ok(fullRules.includes('no-evidence-file'));
+  const only = JSON.parse(cli('check', path.join(dir, 'c.md'), '--json', '--sentences-only', '--today', '2026-09-30').stdout);
+  const onlyRules = only.files[0].findings.map((f) => f.rule);
+  assert.ok(!onlyRules.includes('undated-document'));
+  assert.ok(!onlyRules.includes('no-evidence-file'));
+  assert.ok(onlyRules.includes('unsourced-number'));
+});
