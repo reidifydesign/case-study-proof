@@ -1,0 +1,16 @@
+examples/quickstart/case-study.md  (evidence: examples/quickstart/evidence.json)
+  L8  The new product pages drove a 212% increase in sales.
+    FAIL  unsourced-number  212%: no evidence reference in this sentence
+            fix: Add an evidence reference such as [E1] after the sentence, and add that entry to the evidence file.
+    FAIL  causal-no-evidence  "drove" claims a cause, and no evidence is cited for it
+            fix: Say what was measured and when ("conversions were 4.1% in March, after launch"), or cite a controlled test as evidence.
+    FAIL  missing-date  212%: no date or period in the sentence or its evidence
+            fix: Say the month, quarter or number of days in the sentence, or add a period {from, to} to the evidence entry.
+    WARN  no-baseline  212%: no starting figure or period is given
+            fix: Give the before figure or period ("from 1,200 to 1,680 sessions a month"), or add before, after and baseline_period to the evidence.
+  L10  Mobile conversion improved by 35% in June 2026 [E1].
+    FAIL  number-mismatch  the text says 35%, which E1 does not support (it holds: E1 before 2; E1 after 2.4; E1 change 20; E1 difference 0.4)
+            fix: Change the text to the evidenced figure (rounded honestly), or correct the evidence entry.
+
+FAIL  4 errors, 1 warnings. 2 of 4 figures match their evidence.
+Each fix is shown once per rule. Use --explain to repeat it, or "rules" for the full list.

@@ -1,0 +1,1 @@
+{ "theme": "reidify", "pre": "Every number in a case study, ", "accent": "sourced", "post": ".", "sub": "npx github:reidifydesign/case-study-proof check case-study.md", "prompt": true, "repo": "reidifydesign/case-study-proof", "size": 64 }

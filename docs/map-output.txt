@@ -1,0 +1,15 @@
+Line  Figure             Evidence  Status
+----  -----------------  --------  ------------------------------
+L13   212%               -         no evidence reference
+L15   40%                -         no evidence reference
+L17   35%                E1        DOES NOT MATCH evidence
+L19   1.2s               E2        matches evidence
+L21   41%                E3        matches evidence
+L21   52%                E3        matches evidence
+L23   doubled            -         no evidence reference
+L25   60%                -         no evidence reference
+L27   38%                E9        reference not in evidence file
+L29   20%                E4        matches evidence
+L33   3,000 subscribers  -         no evidence reference
+
+Evidence never cited: E5
