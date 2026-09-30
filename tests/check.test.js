@@ -235,3 +235,79 @@ test('a block-level proof-ignore covers every sentence in the paragraph', () => 
   assert.deepEqual(rules(r).filter((x) => x !== 'unused-evidence'), []);
   assert.ok(r.suppressed >= 4);
 });
+
+// ---- figures the checker used to miss (synthetic sentences) ----
+
+const E5 = { id: 'E5', metric: 'enquiries', source: 'exports/enq.csv', observed_on: '2026-07-02', period: { from: '2026-06-01', to: '2026-06-30' }, before: 17, after: 41 };
+const E6 = { id: 'E6', metric: 'automated checks', source: 'reports/checks-2026-06.txt', observed_on: '2026-07-02', period: { from: '2026-06-01', to: '2026-06-30' }, value: 105 };
+const E7 = { id: 'E7', metric: 'sign-ups', source: 'exports/signups.csv', observed_on: '2026-07-02', period: { from: '2026-06-01', to: '2026-06-30' }, value: 131 };
+
+test('an unsourced from/to pair with small integers is reported', () => {
+  const r = run('Monthly orders went from 17 to 41.\n', []);
+  assert.ok(rules(r).includes('unsourced-number'), JSON.stringify(rules(r)));
+  assert.ok(rules(r).includes('missing-date'));
+  const w = run('Inbound visits rose from 18 the week before to 187 in the first week live.\n', []);
+  assert.ok(rules(w).includes('unsourced-number'));
+});
+
+test('a from/to pair is checked against before and after, in order', () => {
+  const ok = run('Enquiries went from 17 to 41 in June 2026 [E5].\n', [E5]);
+  assert.deepEqual(rules(ok), []);
+  assert.equal(ok.stats.verified, 1);
+  assert.ok(rules(run('Enquiries went from 17 to 45 in June 2026 [E5].\n', [E5])).includes('number-mismatch'));
+  assert.ok(rules(run('Enquiries went from 41 to 17 in June 2026 [E5].\n', [E5])).includes('number-mismatch'));
+});
+
+test('a from/to pair needs a named metric', () => {
+  const r = run('It went from 17 to 41 in June 2026 [E5].\n', [E5]);
+  assert.ok(rules(r).includes('unnamed-metric'));
+});
+
+test('two pairs in one sentence are each checked against the right numbers', () => {
+  const e = { ...E5, id: 'E8', metric: 'search clicks', before: 4, after: 9 };
+  const r = run('Enquiries went from 17 to 41, search clicks from 4 to 9 in June 2026 [E5, E8].\n', [E5, e]);
+  assert.deepEqual(rules(r), []);
+  assert.equal(r.claims.length, 2);
+});
+
+test('score forms are checked against the evidence value', () => {
+  assert.deepEqual(rules(run('105/105 automated checks passed in June 2026 [E6].\n', [E6])), []);
+  assert.ok(rules(run('104/105 automated checks passed in June 2026 [E6].\n', [E6])).includes('number-mismatch'));
+  const u = run('105/105, automated checks passing at launch.\n', []);
+  assert.ok(rules(u).includes('unsourced-number'));
+  assert.ok(rules(run('48/50 checks passing.\n', [])).includes('unsourced-number'));
+});
+
+test('N+ counts are accepted when the evidence is at least N and under twice N', () => {
+  assert.deepEqual(rules(run('128+ students signed up in June 2026 [E7].\n', [E7])), []);
+  assert.ok(rules(run('128+ students signed up in June 2026 [E7].\n', [{ ...E7, value: 90 }])).includes('number-mismatch'));
+  assert.ok(rules(run('128+ students signed up in June 2026 [E7].\n', [{ ...E7, value: 900 }])).includes('number-mismatch'));
+  assert.ok(rules(run('300+ orders shipped.\n', [])).includes('unsourced-number'));
+});
+
+test('a percentage worked out from the figures just before it is not unsourced', () => {
+  const e = { id: 'E9', metric: 'search clicks', source: 'exports/clicks.csv', observed_on: '2026-07-02', period: { from: '2026-06-01', to: '2026-06-30' }, before: 845, after: 351 };
+  const r = run('Search clicks fell from 845 to 351 in June 2026 [E9]. That is a fall of 58%.\n', [e]);
+  assert.deepEqual(rules(r), []);
+  assert.ok(r.claims.some((c) => c.claim === '58%' && c.status === 'derived'));
+  // the arithmetic has to check
+  const bad = run('Search clicks fell from 845 to 351 in June 2026 [E9]. That is a fall of 70%.\n', [e]);
+  assert.ok(rules(bad).includes('unsourced-number'));
+  // the figures may be unsourced if they sit in the same block: only the first sentence is reported
+  const same = run('Search clicks fell from 845 to 351 in June 2026. They fell by 58%.\n', []);
+  assert.deepEqual(same.findings.filter((f) => f.rule === 'unsourced-number').map((f) => f.line), [5]);
+  // a different paragraph counts only when the figures were sourced
+  const apart = run('Search clicks fell from 845 to 351 in June 2026.\n\nThey fell by 58%.\n', []);
+  assert.deepEqual(apart.findings.filter((f) => f.rule === 'unsourced-number').map((f) => f.line), [5, 7]);
+  const sourced = run('Search clicks fell from 845 to 351 in June 2026 [E9].\n\nThey fell by 58%.\n', [e]);
+  assert.deepEqual(rules(sourced), []);
+  // and a derived percentage with its own reference is still checked against that reference
+  const own = run('Search clicks fell from 845 to 351 in June 2026 [E9]. They fell by 58% [E1].\n', [e, E1]);
+  assert.ok(rules(own).includes('number-mismatch'));
+});
+
+test('a percentage worked out from two counts in the sentence before it is derived', () => {
+  const r = run('Search logged 845 clicks in March 2026 and 351 clicks in June 2026. That is 58% fewer.\n', []);
+  assert.deepEqual(r.findings.filter((f) => f.line === 5).map((f) => f.rule), ['unsourced-number']);
+  assert.ok(r.claims.some((c) => c.claim === '58%' && c.status === 'derived'));
+});

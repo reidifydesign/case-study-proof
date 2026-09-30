@@ -36,6 +36,14 @@ const OUTCOME_WORDS = ['growth', 'results', 'performance', 'success', 'demand', 
 
 const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
 
+const PLUS_DURATION = /^(?:years?|yrs?|months?|weeks?|days?|hours?|hrs?|minutes?|mins?|seconds?|secs?)$/;
+const PLUS_STOP = new Set(['of', 'and', 'or', 'in', 'on', 'at', 'to', 'for', 'the', 'a', 'an', 'from', 'with', 'who', 'that', 'which', 'is', 'are', 'were', 'was', 'by', 'per', 'each', 'as', 'so', 'but']);
+const PAIR_NUM = String.raw`(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)`;
+const PAIR_RE = new RegExp(String.raw`\bfrom\s+${PAIR_NUM}(k|m)?(?![A-Za-z0-9])((?:\s+(?!(?:to|from)\b)[A-Za-z][A-Za-z'’-]*){0,6}?)\s+to\s+${PAIR_NUM}(k|m)?(?![A-Za-z0-9])`, 'i');
+const UNIT_START = new RegExp(String.raw`^\s*(?:%|percent\b|per cent\b|pp\b|ms\b|s\b|secs?\b|seconds?\b|milliseconds?\b|kb\b|mb\b|gb\b|days?\b|weeks?\b|months?\b|years?\b|hours?\b|hrs?\b|minutes?\b|mins?\b|a\.?m\b|p\.?m\b|st\b|nd\b|rd\b|th\b)|^\s+${MONTH}\b`, 'i');
+// "open from 9 to 5", "ranging from 3 to 5", "varies from 10 to 20": ranges, not before and after.
+const PAIR_LEAD_BAD = /\b(?:open(?:s|ed|ing)?|ranging|ranges?|anywhere|vary|varies|varying)\s+(?:[A-Za-z]+\s+){0,4}$|\b(?:open(?:s|ed|ing)?|ranging|ranges?|anywhere|vary|varies|varying)\s*$/i;
+
 const WINDOW_RES = [
   new RegExp(`\\b${MONTH}\\.?\\s+(?:\\d{1,2}(?:st|nd|rd|th)?,?\\s+)?(?:19|20)\\d{2}\\b`, 'i'),
   new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)?\\s+${MONTH}\\.?(?:\\s+(?:19|20)\\d{2})?\\b`, 'i'),
@@ -200,6 +208,44 @@ export function extractClaims(plain) {
     add(m, { kind: 'change-word', word: w, ratio: { twice: 2, 'two times': 2, 'three times': 3, 'four times': 4, half: 0.5 }[w] });
   });
 
+  // "128+ students", "300+ orders". Durations ("5+ years"), years and names are left alone.
+  all(/(?<![\w.,])(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)\+(?:[ \t]+([A-Za-z][A-Za-z-]*))?/, (m) => {
+    const digits = m[1];
+    const word = m[2] ? m[2].toLowerCase() : '';
+    if (YEAR.test(digits) || PLUS_DURATION.test(word) || afterProperName(plain, m.index, digits)) return;
+    const noun = word && !PLUS_STOP.has(word) ? word : '';
+    add({ index: m.index, 0: noun ? m[0] : `${digits}+` }, { kind: 'count', plus: true, value: parseNumber(digits), decimals: decimalsOf(digits), noun });
+  });
+
+  // "from 17 to 41", "from 18 the week before to 187": a before and after pair. The sentence is cut
+  // at ", <noun phrase> from" first, so the second pair of a list is not read into the first.
+  const cuts = [0];
+  const cutRe = /(?:,\s*(?:and\s+)?|\s+and\s+)(?:[A-Za-z'’-]+\s+){0,4}?from\s/gi;
+  let cm;
+  while ((cm = cutRe.exec(plain))) cuts.push(cm.index);
+  cuts.forEach((from, i) => {
+    const seg = plain.slice(from, cuts[i + 1] ?? plain.length);
+    const re = new RegExp(PAIR_RE.source, 'gi');
+    let pm;
+    while ((pm = re.exec(seg))) {
+      const at = from + pm.index;
+      const between = pm[3] || '';
+      const lead = /^\s+(thousand|million|billion|lakhs?|crores?)\b/i.exec(between);
+      const tail = plain.slice(at + pm[0].length);
+      const tailScale = /^\s+(thousand|million|billion|lakhs?|crores?)\b/i.exec(tail);
+      const rest = between.replace(lead ? lead[0] : '', '');
+      if (YEAR.test(pm[1]) || YEAR.test(pm[4])) continue;
+      if (PAIR_LEAD_BAD.test(plain.slice(0, at))) continue;
+      if (/^[:/]/.test(tail) || UNIT_START.test(tail) || (rest && UNIT_START.test(rest))) continue;
+      const fs = pm[2] ? SCALE[pm[2].toLowerCase()] : lead ? SCALE[lead[1].toLowerCase()] : 1;
+      const ts = pm[5] ? SCALE[pm[5].toLowerCase()] : tailScale ? SCALE[tailScale[1].toLowerCase()] : 1;
+      add(
+        { index: at, 0: pm[0] + (tailScale ? tailScale[0] : '') },
+        { kind: 'pair', from: parseNumber(pm[1]) * fs, to: parseNumber(pm[4]) * ts, fromDecimals: decimalsOf(pm[1]), toDecimals: decimalsOf(pm[4]), scaled: fs !== 1 || ts !== 1 }
+      );
+    }
+  });
+
   const counts = COUNT_NOUNS.map((n) => n.replace('-', '[- ]?')).join('|');
   all(new RegExp(String.raw`\b(\d[\d,]*(?:\.\d+)?)\s?(k|m)?\s+(?:[A-Za-z-]+\s+){0,2}?(${counts})\b`, 'i'), (m) => {
     if (YEAR.test(m[1])) return; // a year, not a count
@@ -212,7 +258,13 @@ export function extractClaims(plain) {
     if (YEAR.test(m[1]) || afterProperName(plain, m.index, m[1]) || isSpecMeasure(plain, m)) return;
     add(m, { kind: 'measure', value: parseNumber(m[1]), decimals: decimalsOf(m[1]), unit: m[2].toLowerCase() });
   });
-  all(/\b(\d+(?:\.\d+)?)\s?\/\s?100\b/i, (m) => add(m, { kind: 'score', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) }));
+  // 98/100, 105/105, 48/50. Not dates (12/09/2026), fractions (1/2), hours (24/7) or years (2025/26).
+  all(/(?<![\w./-])(\d+(?:\.\d+)?)\s?\/\s?(\d+(?:\.\d+)?)(?![\w/]|\.\d)/, (m) => {
+    const x = parseNumber(m[1]);
+    const y = parseNumber(m[2]);
+    if (YEAR.test(m[1]) || YEAR.test(m[2]) || !(x <= y) || y < 5) return;
+    add(m, { kind: 'score', value: x, decimals: decimalsOf(m[1]), of: y });
+  });
   all(/\b(?:score|rating)s?(?: of| at| to)?\s+(\d+(?:\.\d+)?)\b/i, (m) => {
     if (!YEAR.test(m[1])) add(m, { kind: 'score', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) });
   });

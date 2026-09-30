@@ -160,3 +160,67 @@ test('"-generated" adjectives and verbs with no outcome noun are not causal word
   assert.ok(causalMatches('The campaign delivered results.', lex).length);
   assert.ok(causalMatches('The rebuild boosted sales.', lex).length);
 });
+
+// ---- figures the checker used to miss (synthetic sentences) ----
+
+test('score forms such as 105/105 and 48/50 are figures', () => {
+  assert.deepEqual(kinds('105/105, automated checks passing at launch.'), ['score:105/105']);
+  assert.deepEqual(kinds('48/50 checks passing.'), ['score:48/50']);
+  assert.deepEqual(kinds('Customers rated it 9/10.'), ['score:9/10']);
+  assert.equal(extractClaims('48/50 checks passing.')[0].value, 48);
+  // controls: dates, fractions, hours and fiscal years are not scores
+  assert.deepEqual(kinds('Dated 12/09/2026.'), []);
+  assert.deepEqual(kinds('Open 24/7 and closed for 1/2 a day.'), []);
+  assert.deepEqual(kinds('Fiscal 2025/26 was busy.'), []);
+  assert.deepEqual(kinds('Use and/or as needed.'), []);
+});
+
+test('N+ counts are figures', () => {
+  assert.deepEqual(kinds('128+ students signed up.'), ['count:128+ students']);
+  assert.deepEqual(kinds('300+ orders shipped.'), ['count:300+ orders']);
+  assert.deepEqual(kinds('1,000+ followers joined.'), ['count:1,000+ followers']);
+  assert.deepEqual(kinds('More than 300+ of our buyers returned.'), ['count:300+']);
+  const c = extractClaims('128+ students signed up.')[0];
+  assert.equal(c.value, 128);
+  assert.equal(c.plus, true);
+  // controls: durations, years and names are not counts
+  assert.deepEqual(kinds('5+ years of practice.'), []);
+  assert.deepEqual(kinds('2026+ orders were planned.'), []);
+  assert.deepEqual(kinds('Studio 54+ fans queued.'), []);
+});
+
+test('from A to B pairs are figures, including small integers and words in between', () => {
+  assert.deepEqual(kinds('Orders went from 17 to 41.'), ['pair:from 17 to 41']);
+  assert.deepEqual(kinds('Visits rose from 18 the week before to 187 in the first week.'), ['pair:from 18 the week before to 187']);
+  const p = extractClaims('Visits rose from 18 the week before to 187 in the first week.')[0];
+  assert.deepEqual([p.from, p.to], [18, 187]);
+  const k = extractClaims('Visits rose from 1.2k to 1.8k.')[0];
+  assert.deepEqual([k.from, k.to], [1200, 1800]);
+  const m = extractClaims('Orders rose from 2 million to 3 million.')[0];
+  assert.deepEqual([m.from, m.to], [2e6, 3e6]);
+  // counts after the pair are part of it, not a second figure
+  assert.deepEqual(kinds('Sessions grew from 1,200 to 1,680 sessions.'), ['pair:from 1,200 to 1,680']);
+  // percentages and currency keep their own kinds
+  assert.deepEqual(kinds('Rate rose from 41% in March 2026 to 52% in June 2026.'), ['percent:41%', 'percent:52%']);
+  assert.deepEqual(kinds('Spend rose from $40k to $55k.'), ['currency:$40k', 'currency:$55k']);
+});
+
+test('pairs are split at ", <noun phrase> from" so a second pair is not mixed into the first', () => {
+  const two = extractClaims('Visits rose from 18 to 187, search clicks from 4 to 9.');
+  assert.deepEqual(two.map((c) => [c.from, c.to]), [[18, 187], [4, 9]]);
+  const three = extractClaims('Visits rose from 18 to 187 and search clicks from 4 to 9, enquiries from 2 to 6.');
+  assert.deepEqual(three.map((c) => [c.from, c.to]), [[18, 187], [4, 9], [2, 6]]);
+  // a first pair that has no "to" must not borrow the second pair's
+  const one = extractClaims('Visits rose from 18 the week before, search clicks from 4 to 9.');
+  assert.deepEqual(one.map((c) => [c.from, c.to]), [[4, 9]]);
+});
+
+test('from/to pairs that are not measurements are left alone', () => {
+  assert.deepEqual(kinds('Sessions rose from 2025 to 2026.'), []);
+  assert.deepEqual(kinds('The project took from 3 to 5 weeks.'), []);
+  assert.deepEqual(kinds('The studio is open from 9 to 5.'), []);
+  assert.deepEqual(kinds('Shifts run from 9am to 5pm.'), []);
+  assert.deepEqual(kinds('It runs from 12 March to 14 March.'), []);
+  assert.deepEqual(kinds('Prices vary from 10 to 20 per cent.'), ['percent:10 to 20 per cent']);
+  assert.deepEqual(kinds('Load time fell from 3.2s to 1.1s.'), ['measure:3.2s', 'measure:1.1s']);
+});

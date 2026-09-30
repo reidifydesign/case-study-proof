@@ -173,6 +173,19 @@ export function matchClaim(claim, evs) {
         const inv = 1 / r;
         ok = inv >= lo && inv <= hi;
       }
+    } else if (claim.kind === 'pair') {
+      // "from A to B": A and B must be the evidence's before and after, in that order
+      const hit = (v, x, d) => (claim.scaled ? near(v, x, 0.05, true) : near(v, x, dec(d), false));
+      if (Number.isFinite(c.before) && Number.isFinite(c.after)) {
+        ok = hit(claim.from, c.before, claim.fromDecimals) && hit(claim.to, c.after, claim.toDecimals);
+      } else {
+        const pool = c.list.filter((x) => ['value', 'before', 'after'].includes(x.label));
+        ok = pool.some((x) => hit(claim.from, x.n, claim.fromDecimals)) && pool.some((x) => hit(claim.to, x.n, claim.toDecimals));
+      }
+    } else if (claim.kind === 'count' && claim.plus) {
+      // "128+": the evidence must be at least N, and under twice N, so "100+" does not stand for 900
+      const pool = c.list.filter((x) => ['value', 'before', 'after'].includes(x.label));
+      ok = pool.some((x) => x.n >= claim.value - 1e-9 && x.n < claim.value * 2);
     } else if (['currency', 'count', 'measure', 'score', 'rank'].includes(claim.kind)) {
       let v = claim.value;
       if (claim.kind === 'measure' && TIME[claim.unit] && TIME[String(e.unit || '').toLowerCase()]) {
@@ -186,6 +199,31 @@ export function matchClaim(claim, evs) {
     if (ok) return { ok: true, tried: [] };
   }
   return { ok: false, tried };
+}
+
+// Percent changes that can be worked out from the figures of the sentences just before.
+function derivablePercents(prev) {
+  const change = (a, b) => (a ? Math.abs(((b - a) / a) * 100) : NaN);
+  const out = [];
+  const nums = [];
+  for (const h of prev) {
+    for (const c of h.claims) {
+      if (c.kind === 'pair') {
+        out.push(change(c.from, c.to));
+        nums.push(c.from, c.to);
+      } else if (['count', 'currency', 'measure', 'score'].includes(c.kind) && Number.isFinite(c.value)) nums.push(c.value);
+    }
+  }
+  for (let i = 0; i < nums.length; i++) {
+    for (let j = i + 1; j < nums.length; j++) out.push(change(nums[i], nums[j]), change(nums[j], nums[i]));
+  }
+  return out.filter(Number.isFinite);
+}
+
+function derivedClaims(claims, prev) {
+  if (!prev.length || !claims.some((c) => c.kind === 'percent')) return [];
+  const pcts = derivablePercents(prev);
+  return claims.filter((c) => c.kind === 'percent' && c.low == null && pcts.some((p) => Math.abs(p - c.value) <= 0.5 * Math.pow(10, -c.decimals) + 1e-9));
 }
 
 function excerpt(t) {
@@ -203,6 +241,7 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
   const list = evidence || [];
   for (const e of list) if (e && e.id && !byId.has(e.id)) byId.set(e.id, e);
   const cited = new Set();
+  const history = []; // figures in earlier sentences, for derived percentages
 
   const docDate = isoDate(doc.front.updated) || isoDate(doc.front.date) || null;
   const push = (rule, extra) => findings.push({ rule, severity: RULES[rule].severity, ...extra });
@@ -232,7 +271,7 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
     const { refs, stripped } = extractRefs(s.text, byId);
     const inlineSource = /\]\(https?:\/\//i.test(s.text);
     const plain = toPlain(stripped);
-    const claims = extractClaims(plain);
+    const found = extractClaims(plain);
     const evs = [];
     for (const id of new Set(refs)) {
       cited.add(id);
@@ -240,6 +279,13 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
       else add('dangling-ref', evidence ? `[${id}] is not in the evidence file` : `[${id}] cannot be checked because no evidence file was found`);
     }
     const hasRef = evs.length > 0;
+
+    // A percentage worked out from figures in the sentence or two just before it is derived, not new.
+    const prev = history.slice(-2).filter((h) => h.unit === s.unitStart || h.sourced);
+    const derived = !hasRef && !inlineSource ? derivedClaims(found, prev) : [];
+    const claims = found.filter((c) => !derived.includes(c));
+    for (const c of derived) claimRows.push({ line: s.line, claim: c.raw, kind: c.kind, refs: [], status: 'derived' });
+    history.push({ unit: s.unitStart, sourced: hasRef || inlineSource, claims });
 
     if (claims.length) {
       const raws = claims.map((c) => c.raw).join(', ');
@@ -274,7 +320,7 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
         if (!evBase) add('no-baseline', `${rel.map((c) => c.raw).join(', ')}: no starting figure or period is given`);
       }
 
-      const needsName = claims.filter((c) => ['percent', 'multiplier', 'change-word', 'currency'].includes(c.kind));
+      const needsName = claims.filter((c) => ['percent', 'multiplier', 'change-word', 'currency', 'pair'].includes(c.kind));
       if (needsName.length && !namesMetric(plain, lex)) {
         const evNamed = evs.some((e) => e.metric);
         push('unnamed-metric', {
