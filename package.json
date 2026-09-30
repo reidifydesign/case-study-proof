@@ -1,0 +1,35 @@
+{
+  "name": "case-study-proof",
+  "version": "0.1.0",
+  "description": "Lints case studies for unsourced numbers, causal wording without evidence and missing dates, with a claims-to-evidence template.",
+  "type": "module",
+  "bin": {
+    "case-study-proof": "bin/case-study-proof.js"
+  },
+  "files": [
+    "bin",
+    "src",
+    "templates",
+    "examples"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "case-study",
+    "linter",
+    "claims",
+    "evidence",
+    "proof",
+    "markdown"
+  ],
+  "author": "Rish Sadh",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/reidifydesign/case-study-proof.git"
+  }
+}

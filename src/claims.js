@@ -1,0 +1,263 @@
+// Sentence-level detectors: numeric claims, time windows, baselines, named metrics,
+// causal wording and vague intensifiers. Everything here is a plain heuristic. It reads one
+// sentence at a time and never guesses about the world.
+
+const NUMWORDS = {
+  one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10,
+  eleven: 11, twelve: 12, fifteen: 15, twenty: 20, thirty: 30, forty: 40, fifty: 50,
+  sixty: 60, seventy: 70, eighty: 80, ninety: 90, hundred: 100
+};
+const NUMWORD_RE = Object.keys(NUMWORDS).join('|');
+const SCALE = { k: 1e3, thousand: 1e3, m: 1e6, million: 1e6, bn: 1e9, b: 1e9, billion: 1e9, lakh: 1e5, lakhs: 1e5, crore: 1e7, crores: 1e7 };
+
+export const COUNT_NOUNS = [
+  'users', 'visitors', 'sessions', 'leads', 'orders', 'customers', 'clients', 'enquiries', 'inquiries',
+  'clicks', 'downloads', 'sign-ups', 'signups', 'subscribers', 'bookings', 'sales', 'conversions',
+  'transactions', 'followers', 'views', 'pageviews', 'impressions', 'tickets', 'reviews', 'calls',
+  'applications', 'registrations', 'purchases', 'citations', 'mentions', 'installs'
+];
+
+// Words that name a measurable thing. Users can add their own in the config file.
+export const METRIC_WORDS = [
+  'conversion', 'conversions', 'conversion rate', 'traffic', 'sessions', 'visitors', 'visits', 'users',
+  'revenue', 'sales', 'orders', 'leads', 'enquiries', 'inquiries', 'bounce rate', 'bounce', 'load time',
+  'page speed', 'lcp', 'cls', 'inp', 'ttfb', 'fcp', 'lighthouse', 'score', 'rankings', 'ranking', 'clicks',
+  'impressions', 'ctr', 'click-through', 'retention', 'churn', 'aov', 'average order value', 'cost per lead',
+  'cpl', 'cac', 'roas', 'sign-ups', 'signups', 'subscribers', 'downloads', 'bookings', 'reviews', 'rating',
+  'response time', 'tickets', 'errors', 'uptime', 'cost', 'costs', 'savings', 'time on page', 'pageviews',
+  'page views', 'citations', 'mentions', 'followers', 'open rate', 'reply rate', 'completion rate',
+  'drop-off', 'abandonment', 'cart abandonment', 'checkout', 'issues', 'bugs', 'hours', 'headcount',
+  'margin', 'profit', 'budget', 'spend', 'engagement rate', 'session duration', 'page weight', 'applications',
+  'registrations', 'purchases', 'calls', 'installs', 'throughput', 'latency', 'accessibility violations'
+];
+
+const OUTCOME_WORDS = ['growth', 'results', 'performance', 'success', 'demand', 'interest', 'uplift', 'pipeline', 'adoption'];
+
+const MONTH = '(?:jan(?:uary)?|feb(?:ruary)?|mar(?:ch)?|apr(?:il)?|may|jun(?:e)?|jul(?:y)?|aug(?:ust)?|sep(?:t(?:ember)?)?|oct(?:ober)?|nov(?:ember)?|dec(?:ember)?)';
+
+const WINDOW_RES = [
+  new RegExp(`\\b${MONTH}\\.?\\s+(?:\\d{1,2}(?:st|nd|rd|th)?,?\\s+)?(?:19|20)\\d{2}\\b`, 'i'),
+  new RegExp(`\\b\\d{1,2}(?:st|nd|rd|th)?\\s+${MONTH}\\.?(?:\\s+(?:19|20)\\d{2})?\\b`, 'i'),
+  new RegExp(`\\b(?:in|since|from|during|by|until|through|between|as of|of)\\s+${MONTH}\\b`, 'i'),
+  /\b(?:19|20)\d{2}-\d{2}(?:-\d{2})?\b/,
+  /\bQ[1-4]\s?(?:FY)?\s?(?:(?:19|20)?\d{2})?\b/,
+  /\bH[12]\s+(?:19|20)\d{2}\b/i,
+  /\b(?:19|20)\d{2}\b/,
+  /\b(?:the\s+)?(?:last|past|previous|following|first|next)\s+(?:\d+\s+|a\s+|one\s+|two\s+|three\s+|four\s+|six\s+|twelve\s+)?(?:day|week|month|quarter|year)s?\b/i,
+  /\b(?:within|over|after|in|for|across|during)\s+(?:the\s+)?(?:next\s+|first\s+|course of\s+)?(?:\d+|a|one|two|three|four|five|six|seven|eight|nine|ten|twelve)[\s-]+(?:day|week|month|quarter|year)s?\b/i,
+  /\b\d+[\s-](?:day|week|month|quarter|year)s?\b/i,
+  /\b(?:year[- ]on[- ]year|month[- ]on[- ]month|yoy|mom)\b/i
+];
+
+const BASELINE_RES = [
+  /\bfrom\b[^.;]*\bto\b/i,
+  /\bvs\.?\b/i,
+  /\bversus\b/i,
+  /\bcompared (?:with|to)\b/i,
+  /\bbaseline\b/i,
+  /\bbefore\b/i,
+  /\bprevious(?:ly)?\b/i,
+  /\bprior\b/i,
+  /\bthe same period\b/i,
+  /\byear[- ]on[- ]year|month[- ]on[- ]month|\byoy\b|\bmom\b/i,
+  /\bthan (?:the |our |its )?(?:old|previous|prior|original|last|earlier)\b/i,
+  /\bover (?:the )?(?:previous|prior|same|last)\b/i
+];
+
+const DIRECTION_UP = /\b(?:up|increase[ds]?|increasing|grew|grow|growth|rose|rise|gain(?:ed)?|climb(?:ed)?|lift(?:ed)?|boost(?:ed)?|higher|more|improv(?:e|ed|ement|es)|faster|better|doubled|tripled|quadrupled)\b/i;
+const DIRECTION_DOWN = /\b(?:down|decrease[ds]?|decreasing|drop(?:ped)?|fell|fall|cut|reduc(?:e|ed|tion|es)|lower(?:ed)?|fewer|less|declin(?:e|ed)|shr[au]nk|halved|save[ds]?|saving|slower)\b/i;
+const RELATIVE_WORDS = new RegExp(`${DIRECTION_UP.source}|${DIRECTION_DOWN.source}`, 'i');
+
+export function parseNumber(str) {
+  if (str == null) return NaN;
+  if (typeof str === 'number') return str;
+  const s = String(str).trim().toLowerCase();
+  if (NUMWORDS[s] != null) return NUMWORDS[s];
+  const n = Number(s.replace(/,/g, ''));
+  return n;
+}
+
+export function decimalsOf(str) {
+  const m = /[.](\d+)/.exec(String(str).replace(/,/g, ''));
+  return m ? m[1].length : 0;
+}
+
+function overlaps(used, a, b) {
+  return used.some(([x, y]) => a < y && b > x);
+}
+
+// Returns claims found in one plain-text sentence.
+export function extractClaims(plain) {
+  const claims = [];
+  const used = [];
+  const add = (m, claim) => {
+    const a = m.index;
+    const b = m.index + m[0].length;
+    if (overlaps(used, a, b)) return;
+    used.push([a, b]);
+    claims.push({ raw: m[0].trim(), index: a, ...claim });
+  };
+  const all = (re, fn) => {
+    const r = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    let m;
+    while ((m = r.exec(plain))) fn(m);
+  };
+
+  // currency first, so the number inside is not counted again
+  all(/([$£€₹])\s?(\d[\d,]*(?:\.\d+)?)\s?(k|m|bn|b|million|billion|lakhs?|crores?|thousand)?(?![A-Za-z])/i, (m) => {
+    const scale = m[3] ? SCALE[m[3].toLowerCase()] : 1;
+    add(m, { kind: 'currency', value: parseNumber(m[2]) * scale, decimals: decimalsOf(m[2]), scaled: !!m[3] });
+  });
+  all(/\b(\d[\d,]*(?:\.\d+)?)\s?(k|m|million|billion|lakhs?|crores?)?\s?(USD|EUR|GBP|INR|AUD|CAD|AED)\b/i, (m) => {
+    const scale = m[2] ? SCALE[m[2].toLowerCase()] : 1;
+    add(m, { kind: 'currency', value: parseNumber(m[1]) * scale, decimals: decimalsOf(m[1]), scaled: !!m[2] });
+  });
+  all(/\bRs\.?\s?(\d[\d,]*(?:\.\d+)?)\s?(k|lakhs?|crores?)?/i, (m) => {
+    const scale = m[2] ? SCALE[m[2].toLowerCase()] : 1;
+    add(m, { kind: 'currency', value: parseNumber(m[1]) * scale, decimals: decimalsOf(m[1]), scaled: !!m[2] });
+  });
+
+  // percent, including ranges like 30-40%
+  const pct = new RegExp(String.raw`(?:(?<![\d.,])(\d{1,3}(?:\.\d+)?)\s?(?:-|\u2013|to)\s?)?(\d+(?:[.,]\d+)*|${NUMWORD_RE})\s?(?:%|percent\b|per cent\b|percentage points?\b|pp\b)`, 'gi');
+  let m;
+  while ((m = pct.exec(plain))) {
+    const num = (t) => (/^\d{1,3}(,\d{3})+$/.test(t) ? parseNumber(t) : parseNumber(t.replace(',', '.')));
+    const hi = num(m[2]);
+    let low = m[1] != null ? parseNumber(m[1]) : undefined;
+    let at = m;
+    if (low !== undefined && !(low < hi)) {
+      // not a range ("in 2026 to 52%"): keep only the percentage itself
+      const off = m[0].lastIndexOf(m[2]);
+      at = { index: m.index + off, 0: m[0].slice(off) };
+      low = undefined;
+    }
+    add(at, { kind: 'percent', value: hi, decimals: decimalsOf(m[2]), low, lowDecimals: low !== undefined ? decimalsOf(m[1]) : 0 });
+  }
+
+  all(/\b(\d+(?:\.\d+)?)\s?(?:x|\u00d7)(?![A-Za-z0-9])/i, (m) => add(m, { kind: 'multiplier', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) }));
+  all(/\b(\d+)-fold\b/i, (m) => add(m, { kind: 'multiplier', value: parseNumber(m[1]), decimals: 0 }));
+  all(/\b(\d+(?:\.\d+)?)\s+times\s+(?:as\s+|more\b|higher\b|faster\b|the\b)/i, (m) => add(m, { kind: 'multiplier', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) }));
+
+  all(/\b(doubled|tripled|quadrupled|quintupled|halved)\b/i, (m) => {
+    const w = m[1].toLowerCase();
+    add(m, { kind: 'change-word', word: w, ratio: { doubled: 2, tripled: 3, quadrupled: 4, quintupled: 5, halved: 0.5 }[w] });
+  });
+  all(/\b(?:in|by) (half)\b/i, (m) => add(m, { kind: 'change-word', word: 'half', ratio: 0.5 }));
+  all(/\b(twice|two times|three times|four times|half)\s+as\s+(?:many|much|fast|slow|long)\b/i, (m) => {
+    const w = m[1].toLowerCase();
+    add(m, { kind: 'change-word', word: w, ratio: { twice: 2, 'two times': 2, 'three times': 3, 'four times': 4, half: 0.5 }[w] });
+  });
+
+  const counts = COUNT_NOUNS.map((n) => n.replace('-', '[- ]?')).join('|');
+  all(new RegExp(String.raw`\b(\d[\d,]*(?:\.\d+)?)\s?(k|m)?\s+(?:[A-Za-z-]+\s+){0,2}?(${counts})\b`, 'i'), (m) => {
+    if (/^(?:19|20)\d{2}$/.test(m[1])) return; // a year, not a count
+    const scale = m[2] ? SCALE[m[2].toLowerCase()] : 1;
+    add(m, { kind: 'count', value: parseNumber(m[1]) * scale, decimals: decimalsOf(m[1]), scaled: !!m[2], noun: m[3].toLowerCase() });
+  });
+
+  all(/\b(\d+(?:\.\d+)?)\s?(ms|milliseconds?|seconds?|secs?|s|kb|mb|gb)\b(?!\w)/i, (m) => add(m, { kind: 'measure', value: parseNumber(m[1]), decimals: decimalsOf(m[1]), unit: m[2].toLowerCase() }));
+  all(/\b(\d+(?:\.\d+)?)\s?\/\s?100\b/i, (m) => add(m, { kind: 'score', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) }));
+  all(/\b(?:score|rating)s?(?: of| at| to)?\s+(\d+(?:\.\d+)?)\b/i, (m) => add(m, { kind: 'score', value: parseNumber(m[1]), decimals: decimalsOf(m[1]) }));
+
+  all(/\btop\s+(\d+)\b/i, (m) => add(m, { kind: 'rank', value: parseNumber(m[1]), decimals: 0 }));
+  all(/\b(?:ranked|ranks|ranking|position)\s+(?:#|no\.?\s?)?(\d+)\b/i, (m) => add(m, { kind: 'rank', value: parseNumber(m[1]), decimals: 0 }));
+  all(/#(\d+)\s+(?:ranking|result|position|spot)\b/i, (m) => add(m, { kind: 'rank', value: parseNumber(m[1]), decimals: 0 }));
+  all(/\b(?:first page of (?:google|search|results)|page one of (?:google|search))\b/i, (m) => add(m, { kind: 'rank-implied' }));
+
+  return claims.sort((a, b) => a.index - b.index);
+}
+
+export function hasWindow(plain) {
+  return WINDOW_RES.some((re) => re.test(plain));
+}
+
+export function hasBaseline(plain) {
+  return BASELINE_RES.some((re) => re.test(plain));
+}
+
+export function isRelative(plain, claim) {
+  if (claim.kind === 'multiplier' || claim.kind === 'change-word') return true;
+  if (claim.kind === 'percent') {
+    // "fell to 38%" or "a rate of 3.2%" states a level, not a change
+    const before = plain.slice(0, claim.index);
+    if (/\b(?:to|at|of|was|is|were|reached|hit|stood at)\s*$/i.test(before)) return false;
+    return RELATIVE_WORDS.test(plain);
+  }
+  return false;
+}
+
+export function direction(plain) {
+  const up = DIRECTION_UP.test(plain);
+  const down = DIRECTION_DOWN.test(plain);
+  if (up && !down) return 1;
+  if (down && !up) return -1;
+  return 0;
+}
+
+function wordRe(list) {
+  const parts = [...list].sort((a, b) => b.length - a.length).map((w) => w.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/ /g, '[\\s-]+'));
+  return new RegExp(`(?<![\\w-])(?:${parts.join('|')})(?![\\w-])`, 'i');
+}
+
+export function makeLexicon(extraMetrics = []) {
+  const metrics = [...METRIC_WORDS, ...extraMetrics.map((s) => String(s).toLowerCase())];
+  return { metricRe: wordRe(metrics), outcomeRe: wordRe([...metrics, ...OUTCOME_WORDS]), metrics };
+}
+
+export function namesMetric(plain, lex) {
+  return lex.metricRe.test(plain);
+}
+
+// Causal wording. Only counts when the sentence is about an outcome, so "we chose a serif
+// because the brand is editorial" is left alone.
+const STRONG_CAUSAL = [
+  /\b(?:led|leading|leads) to\b/i,
+  /\bresult(?:ed|ing|s)? in\b/i,
+  /\bas a result\b/i,
+  /\b(?:the )?result of\b/i,
+  /\bbecause of\b/i,
+  /\bthanks to\b/i,
+  /\bdue to\b/i,
+  /\bowing to\b/i,
+  /\bcaus(?:e|ed|es|ing)\b/i,
+  /(?<![-\w])dr(?:ove|ives|iving)\b/i,
+  /\bboost(?:ed|s|ing)\b/i,
+  /\blift(?:ed|s|ing)\b/i,
+  /\bgenerat(?:ed|es|ing)\b/i,
+  /\bdeliver(?:ed|s|ing)\b/i,
+  /\bresponsible for\b/i,
+  /\bunlock(?:ed|s|ing)\b/i,
+  /\bhad an? (?:\w+ )?(?:impact|effect) on\b/i,
+  /\bhelped (?:to )?(?:increase|grow|improve|reduce|cut|double|lift|boost|drive)\b/i,
+  /\bcontribut(?:ed|es|ing) to\b/i
+];
+
+export function causalMatches(plain, lex) {
+  const hits = [];
+  for (const re of STRONG_CAUSAL) {
+    const m = re.exec(plain);
+    if (m) hits.push(m[0]);
+  }
+  const verbs = 'increased|improved|raised|grew|reduced|cut|lowered|doubled|tripled|increases|improves|raises|reduces|cuts|lowers|grows';
+  const tv = new RegExp(`\\b(?:${verbs})\\s+(?:the\\s+|their\\s+|our\\s+|its\\s+|overall\\s+|average\\s+)*(?:[\\w-]+\\s+){0,2}?${lex.metricRe.source}`, 'i');
+  const m = tv.exec(plain);
+  if (m) hits.push(m[0]);
+  if (!hits.length) return [];
+  const aboutOutcome = lex.outcomeRe.test(plain) || extractClaims(plain).length > 0;
+  return aboutOutcome ? hits : [];
+}
+
+export function hedged(plain) {
+  return /\b(?:coincid\w+|correlat\w+|followed|we did not test|not a causal|cannot say|can't say|no causal|not proven)\b/i.test(plain);
+}
+
+const VAGUE = /(?<!statistically )\b(?:significant(?:ly)?|dramatic(?:ally)?|massive(?:ly)?|huge(?:ly)?|skyrocket\w*|explod\w*|record[- ]breaking|game[- ]chang\w+|best[- ]in[- ]class|world[- ]class|incredible|tremendous(?:ly)?|transformative|unprecedented|guaranteed results)\b/i;
+export function vagueWords(plain) {
+  const m = VAGUE.exec(plain);
+  return m ? m[0] : null;
+}
+
+export function placeholderIn(text) {
+  const m = /\[\[CONFIRM[^\]]*\]\]|\bTODO\b|\bTBD\b|\bXX+%|\blorem ipsum\b|\b(?:N|X)\/A%/i.exec(text);
+  return m ? m[0] : null;
+}
