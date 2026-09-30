@@ -36,6 +36,7 @@ That writes `case-study.md` and `evidence.json` with `[[CONFIRM: ...]]` slots. T
 case-study-proof check case-study.md            # lint one or more files
 case-study-proof check a.md b.md --strict       # warnings fail too
 case-study-proof check case-study.md --json     # for scripts and CI
+case-study-proof check draft.md --sentences-only  # sentences only: no document-level warnings
 case-study-proof map case-study.md              # every figure and its evidence
 case-study-proof map case-study.md --markdown   # the same, as a table to paste
 case-study-proof init [dir]                     # write the skeleton
@@ -44,7 +45,9 @@ case-study-proof rules                          # every rule, why, and the fix
 
 The evidence file is found from `evidence:` in the front matter, then `<name>.evidence.json`, then `evidence.json` beside the case study. Or pass `--evidence file.json`.
 
-Exit codes: 0 clean, 1 findings at error level (or warnings with `--strict`), 2 usage error.
+`--sentences-only` drops the two document-level warnings (`undated-document` and `no-evidence-file`), so a pasted paragraph or a draft with no front matter and no evidence file yet shows only what its sentences claim.
+
+Exit codes: 0 clean, 1 findings at error level (or warnings with `--strict`), 2 usage error. A note (`info` level) never changes the exit code.
 
 ![case-study-proof map run on the draft case study, listing each figure with its evidence and status](docs/map-output.png)
 
@@ -55,20 +58,39 @@ Exit codes: 0 clean, 1 findings at error level (or warnings with `--strict`), 2 
 | `unsourced-number` | error | A figure with no `[E#]` reference or link |
 | `number-mismatch` | error | A figure the cited evidence does not support, including wrong percentages worked out from before and after |
 | `dangling-ref` | error | A reference to an id the evidence file does not have |
-| `causal-no-evidence` | error | "Led to", "drove", "thanks to" and similar, about an outcome, with nothing cited |
+| `causal-no-evidence` | error | "Led to", "drove", "thanks to" and similar, about an outcome, with nothing cited. Verbs such as "generated" or "delivered" need a subject and an outcome noun, so "AI-generated photography" is not a cause |
 | `causal-weak-evidence` | warn | Causal wording backed only by observational evidence |
 | `missing-date` | error | A figure with no month, quarter or period, in the sentence or its evidence |
 | `unnamed-metric` | error | "Up 60%" with no word saying what went up |
 | `no-baseline` | warn | "Doubled" or "up 40%" with no starting figure or period |
 | `direction-mismatch` | warn | The text says down, the before and after say up |
-| `vague-claim` | warn | "Significant", "massive" and similar, with no figure |
+| `vague-claim` | warn | "Significant", "massive" and similar, with no figure. Negated uses ("no guaranteed results") are left alone |
+| `outcome-claim-no-measure` | warn | A promised outcome with no figure or evidence: "turns interest into enquiries", "built to convert", "makes booking effortless", "builds authority" |
+| `verification-no-method` | warn | "Verified clean", "zero offenses", "passed all checks" or "fully tested" with no named tool or check and no date in the sentence or the ones next to it |
+| `attribution-wording` | info | "Played a part in", "one of several factors", "rather than anything the rebuild did". A note to check that the evidence says the same, never an error |
 | `placeholder-left` | error | `[[CONFIRM: ...]]`, `TODO`, `TBD` |
 | `evidence-incomplete`, `vague-source`, `future-date`, `unused-evidence` | mixed | Problems in the evidence file itself |
 | `undated-document`, `ignore-without-reason` | mixed | Missing front matter date, silent suppressions |
 
 Each finding says what it saw, why it matters and what to change. Run `case-study-proof rules` for the full text.
 
-The checker reads these figure forms: percentages, multipliers (`3x`), currency (`$40k`, `Rs 5 lakh`), counts of outcome nouns (`38 enquiries`), times and sizes (`1.2s`), scores (`98/100`), ranks (`top 3`), and words such as "doubled" and "in half". Years, version numbers, durations like "6 weeks" and step numbers are left alone.
+The checker reads these figure forms: percentages, multipliers (`3x`), currency (`$40k`, `Rs 5 lakh`), counts of outcome nouns (`38 enquiries`), counts with a plus (`128+ students`), before and after pairs (`from 17 to 41`, `from 18 the week before to 187`), times and sizes (`1.2s`), scores (`98/100`, `105/105`, `48/50`), ranks (`top 3`), and words such as "doubled" and "in half".
+
+What it leaves alone on purpose:
+
+- Years (1900 to 2099) are never figures. A real count in that range needs a thousands separator (`2,026 orders`) to be read.
+- A number directly after a Capitalised word that is not a common quantifier, such as `Studio 54` or `Route 66`, is read as part of a name. "March 12" is read as a date.
+- Format and spec durations: "up to 30 seconds each", "at most 15 seconds", "9:16 vertical at 1080x1920". A sentence about speed or saving ("load in at most 2 seconds", "saves 30 seconds per order") is still a measurement.
+- Durations such as "6 weeks" or "5+ years", version numbers and step numbers.
+- `100% owned by the client` and similar yes-or-no status wording.
+- Dates (`12/09/2026`), fractions (`1/2`), hours (`24/7`) and fiscal years (`2025/26`) are not scores.
+- A pair such as "open from 9 to 5", "ranging from 3 to 5", or one followed by a unit or month ("from 3 to 5 weeks").
+
+How the newer forms are checked against the evidence:
+
+- A pair must match the evidence `before` and `after`, in that order. "From 41 to 17" against before 17 and after 41 is a mismatch. Several pairs in one sentence are split at ", <noun phrase> from" so each is read on its own.
+- `N+` is accepted when the evidence holds at least N and under twice N, so `100+` does not stand for 900.
+- A percentage that follows figures in the sentence or two before it, in the same paragraph or after a sourced sentence, is marked `derived` (and listed so in `map`) when the arithmetic from those figures matches it to the rounding shown. "Clicks fell from 845 to 351 in June 2026 [E1]. That is a fall of 58%." passes. A percentage with its own reference is still checked against that reference.
 
 ### The evidence file
 
@@ -105,6 +127,13 @@ The owner told us orders were up 50%.
 
 A reason after `--` is required. Without one, the suppression is itself an error.
 
+A comment on its own line covers the whole paragraph, list item or table row below it, every sentence in it, so one comment can cover a quoted passage. A comment at the end of a line covers the sentence on that line.
+
+```md
+<!-- proof-ignore: unsourced-number, missing-date, unnamed-metric -- quoted from the client's email, kept in the project folder -->
+They told us orders rose 50%. They also said enquiries rose 30%.
+```
+
 ### Config
 
 An optional `case-study-proof.config.json` beside the case study, or in the working directory:
@@ -138,6 +167,10 @@ An optional `case-study-proof.config.json` beside the case study, or in the work
 - It is rule-based and reads one sentence at a time. It will miss claims worded in ways it does not know, and it will sometimes flag a sentence that is fine. Use `proof-ignore` with a reason for those, and open an issue with the sentence.
 - Causal detection looks for common phrasing in sentences about an outcome. "Because" in a design rationale is left alone. Passive or very indirect wording can slip through.
 - Figures written as words ("nine out of ten") are not read, apart from percentages and a few words such as "doubled".
+- The name, spec and status rules are guesses from nearby words. A real figure written like a name ("Route 66 orders" meaning sixty-six orders) will be skipped, and a limit worded unusually will still be read as a measurement. Use `proof-ignore` with a reason.
+- Outcome, attribution and verification rules look for a short list of phrasings. They are conservative on purpose: "built to last" and "turn the page into a PDF" are left alone, and so are many real promises worded differently.
+- `verification-no-method` accepts any named tool or check in the sentence or the ones beside it. It cannot tell whether the tool really ran or was the right one.
+- A derived percentage is checked only against figures in the sentences just before it. It does not look anywhere else in the document.
 - Units are compared loosely. It converts seconds and milliseconds, and does not convert currencies or bytes.
 - English only. Markdown only.
 
@@ -147,7 +180,7 @@ An optional `case-study-proof.config.json` beside the case study, or in the work
 npm test
 ```
 
-Tests use `node:test` and cover the parser, the figure detectors, every rule, and the command line.
+Tests use `node:test` and cover the parser, the figure detectors, every rule, and the command line. The sentences in the tests are invented.
 
 ## Licence
 
