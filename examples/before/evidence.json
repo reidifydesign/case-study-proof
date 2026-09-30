@@ -1,0 +1,51 @@
+{
+  "evidence": [
+    {
+      "id": "E1",
+      "metric": "mobile conversion rate",
+      "kind": "analytics-export",
+      "source": "analytics",
+      "observed_on": "2026-07-02",
+      "before": 2.0,
+      "after": 2.4
+    },
+    {
+      "id": "E2",
+      "metric": "product page load time",
+      "kind": "lab-test",
+      "source": "internal",
+      "observed_on": "2026-07-02",
+      "value": 1200,
+      "unit": "ms"
+    },
+    {
+      "id": "E3",
+      "metric": "checkout completion rate",
+      "kind": "analytics-export",
+      "source": "exports/checkout-2026-03-06.csv (fictional)",
+      "observed_on": "2026-07-02",
+      "period": { "from": "2026-06-01", "to": "2026-06-30" },
+      "before": 41,
+      "after": 52,
+      "baseline_period": { "from": "2026-03-01", "to": "2026-03-31" }
+    },
+    {
+      "id": "E4",
+      "metric": "returning visitors",
+      "kind": "analytics-export",
+      "source": "exports/visitors-2026-03-06.csv (fictional)",
+      "observed_on": "2026-07-02",
+      "period": { "from": "2026-03-01", "to": "2026-06-30" },
+      "before": 500,
+      "after": 600
+    },
+    {
+      "id": "E5",
+      "metric": "newsletter subscribers",
+      "kind": "dashboard-screenshot",
+      "source": "exports/newsletter-2026-07.png (fictional)",
+      "observed_on": "2026-07-02",
+      "value": 3100
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+{
+  "evidence": [
+    {
+      "id": "E1",
+      "metric": "checkout completion rate",
+      "kind": "analytics-export",
+      "source": "exports/checkout-2026-03-06.csv (fictional)",
+      "observed_on": "2026-07-02",
+      "period": { "from": "2026-06-01", "to": "2026-06-30" },
+      "baseline_period": { "from": "2026-03-01", "to": "2026-03-31" },
+      "before": 41,
+      "after": 52,
+      "unit": "%",
+      "design": "observational"
+    },
+    {
+      "id": "E2",
+      "metric": "organic sessions",
+      "kind": "analytics-export",
+      "source": "exports/sessions-2026-03-06.csv (fictional)",
+      "observed_on": "2026-07-02",
+      "period": { "from": "2026-06-01", "to": "2026-06-30" },
+      "baseline_period": { "from": "2026-03-01", "to": "2026-03-31" },
+      "before": 1200,
+      "after": 1680,
+      "design": "observational"
+    },
+    {
+      "id": "E3",
+      "metric": "Largest Contentful Paint, product pages",
+      "kind": "lab-test",
+      "source": "exports/lighthouse-2026-03-06.json (fictional)",
+      "observed_on": "2026-07-02",
+      "period": { "from": "2026-06-01", "to": "2026-06-30" },
+      "baseline_period": { "from": "2026-03-01", "to": "2026-03-31" },
+      "before": 3100,
+      "after": 1200,
+      "unit": "ms",
+      "design": "observational"
+    },
+    {
+      "id": "E4",
+      "metric": "contact form enquiries",
+      "kind": "form-export",
+      "source": "exports/enquiries-2026-03-06.csv (fictional)",
+      "observed_on": "2026-07-02",
+      "period": { "from": "2026-06-01", "to": "2026-06-30" },
+      "baseline_period": { "from": "2026-03-01", "to": "2026-03-31" },
+      "before": 38,
+      "after": 51,
+      "design": "observational"
+    }
+  ]
+}

@@ -1,0 +1,26 @@
+{
+  "evidence": [
+    {
+      "id": "E1",
+      "metric": "mobile conversion rate",
+      "kind": "analytics-export",
+      "source": "exports/mobile-2026-03-06.csv (fictional)",
+      "observed_on": "2026-07-02",
+      "period": { "from": "2026-06-01", "to": "2026-06-30" },
+      "baseline_period": { "from": "2026-03-01", "to": "2026-03-31" },
+      "before": 2.0,
+      "after": 2.4
+    },
+    {
+      "id": "E2",
+      "metric": "checkout completion rate",
+      "kind": "analytics-export",
+      "source": "exports/checkout-2026-03-06.csv (fictional)",
+      "observed_on": "2026-07-02",
+      "period": { "from": "2026-06-01", "to": "2026-06-30" },
+      "baseline_period": { "from": "2026-03-01", "to": "2026-03-31" },
+      "before": 41,
+      "after": 52
+    }
+  ]
+}

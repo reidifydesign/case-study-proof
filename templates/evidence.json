@@ -1,0 +1,17 @@
+{
+  "evidence": [
+    {
+      "id": "E1",
+      "metric": "[[CONFIRM: what was measured, e.g. organic sessions]]",
+      "kind": "[[CONFIRM: analytics-export, invoice, dashboard-screenshot, signed-email, survey]]",
+      "source": "[[CONFIRM: URL, or file path plus export name]]",
+      "observed_on": "[[CONFIRM: YYYY-MM-DD, the day you read the figure]]",
+      "period": { "from": "[[CONFIRM: YYYY-MM-DD]]", "to": "[[CONFIRM: YYYY-MM-DD]]" },
+      "before": 0,
+      "after": 0,
+      "baseline_period": { "from": "[[CONFIRM: YYYY-MM-DD]]", "to": "[[CONFIRM: YYYY-MM-DD]]" },
+      "design": "observational",
+      "note": "Keep design as observational unless a controlled test was run. Then use ab-test or holdout."
+    }
+  ]
+}
