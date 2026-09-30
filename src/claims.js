@@ -356,8 +356,8 @@ function causalVerbHit(plain, lex) {
     const m = re.exec(plain);
     if (!m) continue;
     if (!/[A-Za-z]/.test(plain.slice(0, m.index))) continue; // no subject
-    const after = plain.slice(m.index + m[0].length).split(/[,;:.!?]/)[0].split(/\s+/).slice(0, 9).join(' ');
-    if (/\d/.test(after) || lex.outcomeRe.test(after)) return m[0];
+    const after = plain.slice(m.index + m[0].length).split(/[,;:!?]|\.(?!\d)/)[0].split(/\s+/).slice(0, 9).join(' ');
+    if (lex.outcomeRe.test(after) || /\d\s?(?:%|x\b|\u00d7|percent\b)|[$\u00a3\u20ac\u20b9]\s?\d/i.test(after)) return m[0];
   }
   return null;
 }

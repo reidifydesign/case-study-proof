@@ -154,10 +154,12 @@ test('"-generated" adjectives and verbs with no outcome noun are not causal word
   assert.equal(causalMatches('Auto-generated alt text covers the gallery and sales pages.', lex).length, 0);
   assert.equal(causalMatches('The agency delivered the files on time, and results were steady.', lex).length, 0);
   assert.equal(causalMatches('Generated 38 enquiries.', lex).length, 0);
+  assert.equal(causalMatches('The agency delivered 12 new pages on time.', lex).length, 0);
   // controls: a subject plus an outcome noun is still flagged
   assert.ok(causalMatches('The new pages generated 38 enquiries.', lex).length);
   assert.ok(causalMatches('The redesign generated more enquiries.', lex).length);
   assert.ok(causalMatches('The campaign delivered results.', lex).length);
+  assert.ok(causalMatches('The new pages drove a 212% increase.', lex).length);
   assert.ok(causalMatches('The rebuild boosted sales.', lex).length);
 });
 
