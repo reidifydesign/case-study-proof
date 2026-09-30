@@ -2,7 +2,7 @@
 import { parseDocument, toPlain } from './parse.js';
 import {
   extractClaims, hasWindow, hasBaseline, isRelative, makeLexicon, namesMetric,
-  causalMatches, hedged, vagueWords, placeholderIn
+  causalMatches, hedged, vagueWords, placeholderIn, outcomePhrase, attributionWording, verificationClaim, toolNamed
 } from './claims.js';
 import { candidates, validateEvidence, isoDate, CAUSAL_DESIGNS } from './evidence.js';
 
@@ -66,6 +66,24 @@ export const RULES = {
     title: 'Intensifier in place of a figure',
     why: 'Words like "significant" or "massive" sound like proof and contain none.',
     fix: 'Replace the word with the measured figure and its date, or cut the sentence.'
+  },
+  'outcome-claim-no-measure': {
+    severity: 'warn',
+    title: 'Outcome promised with no measure',
+    why: 'Phrases like "turns interest into enquiries", "built to convert" or "builds authority" say what the work does to a result. No figure or evidence here shows it did.',
+    fix: 'Say what was measured and when, cite the evidence, or describe what the page does without promising the result.'
+  },
+  'attribution-wording': {
+    severity: 'info',
+    title: 'Attribution wording',
+    why: 'Phrases like "played a part in" or "one of several factors" share the credit for a result. That can be honest, but it is still a claim about cause.',
+    fix: 'Check that the evidence supports it, and say what the other factors were if you know them.'
+  },
+  'verification-no-method': {
+    severity: 'warn',
+    title: 'Clean bill of health with no method or date',
+    why: '"Verified clean", "zero offenses" and "passed all checks" are only as good as the tool that ran and the day it ran.',
+    fix: 'Name the tool or check and the date ("axe-core, 12 June 2026"), or cite an evidence entry that records them.'
   },
   'placeholder-left': {
     severity: 'error',
@@ -261,7 +279,7 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
     }
   }
 
-  for (const s of doc.sentences) {
+  for (const [idx, s] of doc.sentences.entries()) {
     const base = { file: 'text', line: s.line, endLine: s.endLine, unitStart: s.unitStart, excerpt: excerpt(s.text) };
     const add = (rule, message, fix) => push(rule, { ...base, message, fix: fix || RULES[rule].fix });
 
@@ -353,6 +371,23 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
       const v = vagueWords(plain);
       if (v) add('vague-claim', `"${v}" has no figure behind it`);
     }
+
+    const unsourced = !hasRef && !inlineSource;
+    if (unsourced && !hits.length && !hedged(plain)) {
+      const o = outcomePhrase(plain);
+      if (o) add('outcome-claim-no-measure', `"${o}" promises an outcome, and no figure or evidence is cited for it`);
+    }
+
+    const at = attributionWording(plain);
+    if (at) add('attribution-wording', `"${at}" is attribution wording: check that the evidence supports it`);
+
+    const vc = unsourced ? verificationClaim(plain) : null;
+    if (vc && !toolNamed(plain) && !hasWindow(plain)) {
+      const near = [doc.sentences[idx - 1], doc.sentences[idx + 1]]
+        .filter((n) => n && n.unitStart === s.unitStart)
+        .map((n) => toPlain(n.text));
+      if (!near.some((t) => toolNamed(t) || hasWindow(t))) add('verification-no-method', `"${vc}" names no tool or check and gives no date`);
+    }
   }
 
   for (const id of byId.keys()) {
@@ -376,7 +411,7 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
   const ignored = new Set(config.ignoreRules || []);
   const final = kept.filter((f) => !ignored.has(f.rule));
   const order = Object.keys(RULES);
-  const sev = (f) => (f.severity === 'error' ? 0 : 1);
+  const sev = (f) => (f.severity === 'error' ? 0 : f.severity === 'warn' ? 1 : 2);
   final.sort((a, b) => (a.line ?? 1e9) - (b.line ?? 1e9) || sev(a) - sev(b) || order.indexOf(a.rule) - order.indexOf(b.rule));
   return {
     findings: final,
@@ -389,7 +424,8 @@ export function checkDocument(text, { evidence = null, evidenceFile = null, toda
       claims: claimRows.length,
       verified: claimRows.filter((c) => c.status === 'verified').length,
       errors: final.filter((f) => f.severity === 'error').length,
-      warnings: final.filter((f) => f.severity === 'warn').length
+      warnings: final.filter((f) => f.severity === 'warn').length,
+      info: final.filter((f) => f.severity === 'info').length
     }
   };
 }

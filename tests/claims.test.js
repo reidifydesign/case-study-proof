@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
   extractClaims, hasWindow, hasBaseline, isRelative, makeLexicon, namesMetric,
-  causalMatches, hedged, vagueWords, placeholderIn
+  causalMatches, hedged, vagueWords, placeholderIn, outcomePhrase, attributionWording, verificationClaim, toolNamed
 } from '../src/claims.js';
 
 const lex = makeLexicon();
@@ -223,4 +223,66 @@ test('from/to pairs that are not measurements are left alone', () => {
   assert.deepEqual(kinds('It runs from 12 March to 14 March.'), []);
   assert.deepEqual(kinds('Prices vary from 10 to 20 per cent.'), ['percent:10 to 20 per cent']);
   assert.deepEqual(kinds('Load time fell from 3.2s to 1.1s.'), ['measure:3.2s', 'measure:1.1s']);
+});
+
+// ---- outcome promises, attribution wording and unexplained verification (synthetic sentences) ----
+
+test('outcome promises with no measure are found', () => {
+  for (const t of [
+    'The page turns interest into enquiries.',
+    'Our pages turn visitors into customers.',
+    'Every build is built to convert.',
+    'A site designed to convert visitors.',
+    'The menu is built to sell.',
+    'It makes booking effortless.',
+    'Good content builds authority.',
+    'The shop earns trust.',
+    'Pages that convert browsers to buyers.'
+  ]) {
+    assert.ok(outcomePhrase(t), t);
+  }
+});
+
+test('outcome promises: ordinary uses of the same words are left alone', () => {
+  for (const t of [
+    'The bench is built to last.',
+    'Turn the page into a PDF.',
+    'It makes a wooden table.',
+    'We built a trust-score dashboard.',
+    'The tool can convert the file to PDF.',
+    'We do not turn interest into enquiries for free.',
+    'The brief asked for trust and authority.'
+  ]) {
+    assert.equal(outcomePhrase(t), null, t);
+  }
+});
+
+test('attribution wording is found', () => {
+  for (const t of [
+    'The rebuild played a part in the rise.',
+    'It played a big role in launch week.',
+    'It was one of several factors.',
+    'Sessions rose rather than anything the rebuild did.',
+    'It was partly because of the ad spend.'
+  ]) {
+    assert.ok(attributionWording(t), t);
+  }
+  for (const t of ['We played a game at the launch.', 'The rebuild was a part of the plan.', 'One of the owners visited.']) {
+    assert.equal(attributionWording(t), null, t);
+  }
+});
+
+test('verification claims and named tools', () => {
+  for (const t of ['Verified clean.', 'Zero offenses.', 'Zero offences found.', 'It passed all checks.', 'All 12 checks passed.', 'The site is fully tested.', 'It passed all 12 checks.']) {
+    assert.ok(verificationClaim(t), t);
+  }
+  for (const t of ['We tested the form.', 'No offenders were listed.', 'It was not fully tested.']) {
+    assert.equal(verificationClaim(t), null, t);
+  }
+  for (const t of ['Verified clean with axe-core.', 'Checked using Playwright.', 'Verified by Siteimprove.', 'Passed the WCAG 2.2 AA checks.']) {
+    assert.ok(toolNamed(t), t);
+  }
+  for (const t of ['Verified clean.', 'Checked by the client.', 'Passed all checks by Friday.']) {
+    assert.ok(!toolNamed(t), t);
+  }
 });

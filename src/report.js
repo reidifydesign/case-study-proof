@@ -9,11 +9,12 @@ export function formatText(results, opts = {}) {
   const out = [];
   let errors = 0;
   let warnings = 0;
+  let notes = 0;
   let suppressed = 0;
   let claims = 0;
   let verified = 0;
   const explained = new Set();
-  const label = (f) => (f.severity === 'error' ? paint(c, 31, 'FAIL') : paint(c, 33, 'WARN'));
+  const label = (f) => (f.severity === 'error' ? paint(c, 31, 'FAIL') : f.severity === 'warn' ? paint(c, 33, 'WARN') : paint(c, 36, 'INFO'));
   const fixLine = (f) => {
     if (!opts.explain && explained.has(f.rule)) return;
     explained.add(f.rule);
@@ -43,6 +44,7 @@ export function formatText(results, opts = {}) {
     out.push('');
     errors += r.stats.errors;
     warnings += r.stats.warnings;
+    notes += r.stats.info || 0;
     suppressed += r.suppressed;
     claims += r.stats.claims;
     verified += r.stats.verified;
@@ -50,6 +52,7 @@ export function formatText(results, opts = {}) {
   const pass = errors === 0 && !(opts.strict && warnings > 0);
   out.push(
     `${pass ? paint(c, 32, 'PASS') : paint(c, 31, 'FAIL')}  ${errors} errors, ${warnings} warnings` +
+      (notes ? `, ${notes} ${notes === 1 ? 'note' : 'notes'}` : '') +
       (suppressed ? `, ${suppressed} suppressed` : '') +
       `. ${verified} of ${claims} figures match their evidence.`
   );
@@ -81,7 +84,8 @@ const STATUS = {
   mismatch: 'DOES NOT MATCH evidence',
   unsourced: 'no evidence reference',
   'unknown-ref': 'reference not in evidence file',
-  'inline-source': 'inline link only, not checked'
+  'inline-source': 'inline link only, not checked',
+  derived: 'worked out from the figures above'
 };
 
 export function formatMap(r, { markdown = false } = {}) {

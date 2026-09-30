@@ -155,7 +155,7 @@ test('extractRefs only takes known ids or E-numbers, never markdown links', () =
 
 test('every rule has a severity, a reason and a fix', () => {
   for (const [id, r] of Object.entries(RULES)) {
-    assert.ok(['error', 'warn'].includes(r.severity), id);
+    assert.ok(['error', 'warn', 'info'].includes(r.severity), id);
     assert.ok(r.title && r.why && r.fix, id);
     assert.ok(!/—/.test(r.title + r.why + r.fix), `${id} has an em dash`);
   }
@@ -310,4 +310,64 @@ test('a percentage worked out from two counts in the sentence before it is deriv
   const r = run('Search logged 845 clicks in March 2026 and 351 clicks in June 2026. That is 58% fewer.\n', []);
   assert.deepEqual(r.findings.filter((f) => f.line === 5).map((f) => f.rule), ['unsourced-number']);
   assert.ok(r.claims.some((c) => c.claim === '58%' && c.status === 'derived'));
+});
+
+// ---- outcome promises, attribution wording and unexplained verification (synthetic sentences) ----
+
+test('outcome-claim-no-measure: a promised outcome with no figure or evidence', () => {
+  const r = run('The form result rose because the page turns interest into enquiries.\n', []);
+  assert.ok(rules(r).includes('outcome-claim-no-measure'), JSON.stringify(rules(r)));
+  assert.equal(r.findings.find((f) => f.rule === 'outcome-claim-no-measure').severity, 'warn');
+  for (const t of ['Every page is built to convert.', 'It makes booking effortless.', 'Good content builds authority.']) {
+    assert.ok(rules(run(`${t}\n`, [])).includes('outcome-claim-no-measure'), t);
+  }
+});
+
+test('outcome-claim-no-measure: negatives and already-flagged causal wording', () => {
+  assert.deepEqual(rules(run('The bench is built to last.\n', [])), []);
+  assert.deepEqual(rules(run('Turn the page into a PDF.\n', [])), []);
+  // "drives sales" is causal wording, reported once under the causal rule
+  const c = rules(run('The rebuild drives sales.\n', []));
+  assert.ok(c.includes('causal-no-evidence'));
+  assert.ok(!c.includes('outcome-claim-no-measure'));
+  // hedged, cited and negated uses are not flagged
+  assert.ok(!rules(run('We did not test whether the page turns interest into enquiries.\n', [])).includes('outcome-claim-no-measure'));
+  assert.ok(!rules(run('Enquiries went from 17 to 41 in June 2026 [E5], and the page turns interest into enquiries.\n', [E5])).includes('outcome-claim-no-measure'));
+});
+
+test('attribution-wording is info level and never fails a run', () => {
+  for (const t of ['The rebuild played a part in the rise.', 'It was one of several factors.', 'Sessions rose rather than anything the rebuild did.']) {
+    const r = run(`${t}\n`, []);
+    const f = r.findings.find((x) => x.rule === 'attribution-wording');
+    assert.ok(f, t);
+    assert.equal(f.severity, 'info');
+    assert.match(f.message, /attribution wording/);
+    assert.equal(r.stats.errors, 0);
+    assert.equal(r.stats.warnings, 0);
+    assert.equal(r.stats.info, 1);
+  }
+});
+
+test('verification-no-method: a clean bill with no tool and no date', () => {
+  for (const t of ['Verified clean.', 'Zero offenses.', 'Passed all checks.', 'Fully tested.']) {
+    const r = run(`${t}\n`, []);
+    assert.ok(rules(r).includes('verification-no-method'), t);
+    assert.equal(r.findings.find((f) => f.rule === 'verification-no-method').severity, 'warn');
+  }
+});
+
+test('verification-no-method: a named tool, a date or evidence is enough', () => {
+  for (const t of [
+    'Verified clean with axe-core.',
+    'Verified clean in June 2026.',
+    'Fully tested on 2026-06-12.',
+    'We ran Lighthouse. Passed all checks.',
+    'Passed all checks. The run was on 12 June 2026.',
+    'Zero offenses in the WCAG 2.2 AA audit.'
+  ]) {
+    assert.ok(!rules(run(`${t}\n`, [])).includes('verification-no-method'), t);
+  }
+  assert.ok(!rules(run('Passed all checks [E6].\n', [E6])).includes('verification-no-method'));
+  // a tool two paragraphs away is not nearby
+  assert.ok(rules(run('We ran Lighthouse.\n\nPassed all checks.\n', [])).includes('verification-no-method'));
 });

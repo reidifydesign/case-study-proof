@@ -113,3 +113,22 @@ test('--sentences-only drops undated-document and no-evidence-file but keeps sen
   assert.ok(!onlyRules.includes('no-evidence-file'));
   assert.ok(onlyRules.includes('unsourced-number'));
 });
+
+test('info-level findings are shown as notes and never fail a run, even with --strict', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'csp-'));
+  fs.writeFileSync(path.join(dir, 'c.md'), '---\ndate: 2026-09-14\n---\n\nThe rebuild played a part in the rise.\n');
+  fs.writeFileSync(path.join(dir, 'evidence.json'), '[]');
+  const r = cli('check', path.join(dir, 'c.md'), '--today', '2026-09-30', '--strict', '--no-color');
+  assert.equal(r.status, 0, r.stdout);
+  assert.match(r.stdout, /INFO\s+attribution-wording/);
+  assert.match(r.stdout, /PASS\s+0 errors, 0 warnings, 1 note\./);
+  const j = JSON.parse(cli('check', path.join(dir, 'c.md'), '--json', '--today', '2026-09-30').stdout);
+  assert.equal(j.files[0].stats.info, 1);
+});
+
+test('rules lists the info level rule and the new warnings', () => {
+  const r = cli('rules');
+  assert.match(r.stdout, /attribution-wording {2}\(info\)/);
+  assert.match(r.stdout, /outcome-claim-no-measure {2}\(warn\)/);
+  assert.match(r.stdout, /verification-no-method {2}\(warn\)/);
+});

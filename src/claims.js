@@ -397,3 +397,76 @@ export function placeholderIn(text) {
   const m = /\[\[CONFIRM[^\]]*\]\]|\bTODO\b|\bTBD\b|\bXX+%|\blorem ipsum\b|\b(?:N|X)\/A%/i.exec(text);
   return m ? m[0] : null;
 }
+
+// Outcome promises with no measure: "turns interest into enquiries", "built to convert",
+// "makes booking effortless", "builds authority". These say what the work does to a result
+// without a figure. Plain cause verbs such as "drives sales" are reported as causal wording.
+const OUTCOME_NOUNS = 'enquiries|inquiries|leads|customers|clients|sales|orders|bookings|buyers|subscribers|sign-ups|signups|revenue|members|students|patients|appointments|conversions|users|applications|donations';
+const OUTCOME_PHRASES = [
+  new RegExp(String.raw`\b(?:turn|turns|turned|turning|convert|converts|converted|converting)\s+(?:[\w'-]+\s+){0,3}?(?:into|to)\s+(?:[\w'-]+\s+){0,2}?(?:${OUTCOME_NOUNS})\b`, 'i'),
+  /\b(?:built|designed|engineered|crafted|made|optimi[sz]ed|structured|tuned)\s+(?:to|for)\s+(?:convert|conversions?|sell|selling|generate\s+(?:leads|sales|enquiries|inquiries)|drive\s+(?:sales|leads|enquiries|inquiries|conversions|growth|revenue))\b/i,
+  /\bmak(?:e|es|ing)\s+(?:[\w'-]+\s+){1,4}?(?:effortless|frictionless|seamless)\b/i,
+  /\b(?:build|builds|building|built|boosts?|earns?|creates?|establishes?|strengthens?)\s+(?:instant\s+|real\s+|lasting\s+|more\s+|brand\s+)?(?:authority|credibility|trust|awareness|loyalty|demand)(?![-\w])/i
+];
+
+function firstUnnegated(plain, res) {
+  for (const re of res) {
+    const r = new RegExp(re.source, 'gi');
+    let m;
+    while ((m = r.exec(plain))) {
+      if (!negatedBefore(plain, m.index)) return m[0];
+    }
+  }
+  return null;
+}
+
+export function outcomePhrase(plain) {
+  return firstUnnegated(plain, OUTCOME_PHRASES);
+}
+
+// Wording that shares the credit: fine to write, worth checking that the evidence says the same.
+const ATTRIBUTION = [
+  /\bplayed (?:an? |the )?(?:\w+ )?(?:part|role) in\b/i,
+  /\bone of (?:several|many|a few|multiple|the) (?:\w+ )?(?:factors|reasons|causes|drivers)\b/i,
+  /\brather than (?:anything|something|what) (?:the|our|we|it|that)\b/i,
+  /\b(?:a|one) (?:contributing )?factor in\b/i,
+  /\bpartly (?:because|due to|thanks to|down to)\b/i,
+  /\bpart of the reason\b/i
+];
+
+export function attributionWording(plain) {
+  for (const re of ATTRIBUTION) {
+    const m = re.exec(plain);
+    if (m) return m[0];
+  }
+  return null;
+}
+
+// "verified clean", "zero offenses", "passed all checks", "fully tested": a clean bill of health.
+const VERIFY = [
+  /\bverified (?:clean|as clean|fully)\b/i,
+  /\b(?:zero|0) (?:known )?(?:offen[cs]es|violations|vulnerabilities|defects|errors|bugs|issues|failures)\b/i,
+  /\bpass(?:ed|es|ing)\s+(?:all|every|each)\s+(?:the\s+)?(?:\w+\s+)?(?:checks?|tests?|audits?|validations?|reviews?)\b/i,
+  /\b(?:fully|thoroughly|completely|rigorously)\s+(?:tested|verified|audited|validated|checked|reviewed)\b/i,
+  /\ball\s+(?:\d+\s+)?(?:checks|tests|audits)\s+(?:passed|passing|pass|green)\b/i,
+  /\bclean bill of health\b/i
+];
+
+export function verificationClaim(plain) {
+  return firstUnnegated(plain, VERIFY);
+}
+
+const TOOL_RE = /\b(?:axe(?:-core)?|lighthouse|pa11y|wave|eslint|stylelint|w3c|nu html checker|html validator|validator|playwright|cypress|selenium|jest|vitest|mocha|pytest|phpunit|snyk|semgrep|sonar(?:qube|cloud)?|dependabot|npm audit|trivy|owasp|zap|burp|screaming frog|pagespeed|webpagetest|gtmetrix|browserstack|lambdatest|wcag|section 508|tenon|siteimprove)\b/i;
+const NAMED_BY = /\b(?:using|with|via|through|by|in|on|against|under)\s+(?:the\s+)?([A-Z][\w.+-]+)/g;
+const NOT_A_TOOL = new Set([...MONTH_NAMES, 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']);
+
+// Does the sentence name the tool or check that did the verifying?
+export function toolNamed(plain) {
+  if (TOOL_RE.test(plain)) return true;
+  let m;
+  NAMED_BY.lastIndex = 0;
+  while ((m = NAMED_BY.exec(plain))) {
+    if (!NOT_A_TOOL.has(m[1].toLowerCase().replace(/[.+-]+$/, ''))) return true;
+  }
+  return false;
+}
